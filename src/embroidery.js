@@ -1167,9 +1167,10 @@ export class LaceRenderer {
     this.anchor = null
   }
 
-  drawBlock(context, gx, gy, progress = 1) {
+  drawBlock(context, gx, gy, progress = 1, seed = null) {
     const { cell, lineWidth } = this.geometry
-    const sprite = this.blocks[Math.floor(hash(gx * 5 + 2, gy * 3 + 7) * BLOCK_VARIANTS)]
+    const variant = seed === null ? hash(gx * 5 + 2, gy * 3 + 7) : hash(seed * 5 + 2, 7)
+    const sprite = this.blocks[Math.floor(variant * BLOCK_VARIANTS)]
     const x = gx * cell
     const y = gy * cell
     const size = cell + lineWidth
@@ -1311,6 +1312,30 @@ export class LaceRenderer {
     soften(this.textLayer, this.ratio * 0.3)
   }
 
+  // Draw a deleted letter `pulled` of the way out: each stitch is shifted
+  // along the worked path toward its end, and stitches past the end are
+  // gone through the hole.
+  drawGhostAt(context, ghost, pulled, firstRow, lastRow) {
+    const { geometry } = this
+    const { item } = ghost
+    const { cells } = item.glyph
+    const baseRow = geometry.baselineOffset + item.line * geometry.lineHeight
+    const last = cells.length - 1
+    const shift = pulled * cells.length
+    for (let k = 0; k < cells.length; k += 1) {
+      const at = k + shift
+      if (at > last) break
+      const from = cells[Math.floor(at)]
+      const to = cells[Math.min(last, Math.floor(at) + 1)]
+      const f = at - Math.floor(at)
+      const { gx, gy } = this.toGrid(
+        item.col + from[0] + (to[0] - from[0]) * f,
+        baseRow + from[1] + (to[1] - from[1]) * f,
+      )
+      if (gy >= firstRow && gy <= lastRow) this.drawBlock(context, gx, gy, 1, k)
+    }
+  }
+
   cellCenter(gx, gy) {
     const { cell, lineWidth } = this.geometry
     return {
@@ -1383,60 +1408,16 @@ export class LaceRenderer {
       })
     }
 
-    // A deleted letter comes undone in one quick pull: its stitches pop
-    // free one after another along the run they were worked in, while the
-    // freed length of yarn springs up off the lace in a crinkled loop and
-    // is whipped away.
+    // A deleted letter is pulled out like a single thread: the whole run of
+    // stitches slides along the path it was worked in and is drawn out
+    // through the hole of its last stitch, picking up speed as it goes.
     for (const ghost of scene.ghosts ?? []) {
-      if (now >= ghost.end) continue
-      const { item, start, duration } = ghost
-      const { cells } = item.glyph
-      const baseRow = geometry.baselineOffset + item.line * geometry.lineHeight
-      const t = clamp((now - start) / duration, 0, 1)
-      // Pulled out from the last stitch worked back to the first.
-      const undone = Math.floor(t ** 0.7 * cells.length)
-      for (let k = 0; k < cells.length - undone; k += 1) {
-        const [dx, dy] = cells[k]
-        const { gx, gy } = this.toGrid(item.col + dx, baseRow + dy)
-        if (gy >= firstRow && gy <= lastRow) this.drawBlock(context, gx, gy)
+      if (now >= ghost.end || now < ghost.start) {
+        if (now < ghost.start) this.drawGhostAt(context, ghost, 0, firstRow, lastRow)
+        continue
       }
-      if (now < start || undone === 0) continue
-
-      // The loose strand follows the last few stitches it came out of,
-      // lifting free of the mesh and crimped from having been worked.
-      const tail = Math.min(undone, 14)
-      const fade = clamp((now - start - duration) / (ghost.end - start - duration), 0, 1)
-      const points = []
-      for (let k = 0; k < tail; k += 1) {
-        const index = cells.length - undone + k
-        const [dx, dy] = cells[index]
-        const { gx, gy } = this.toGrid(item.col + dx, baseRow + dy)
-        const centre = this.cellCenter(gx, gy)
-        const lift = (k / tail) * cell * 4 * (1 + fade * 3)
-        points.push({
-          x: centre.x + Math.sin(index * 2.1) * cell * 0.5 + fade * cell * 10,
-          y: centre.y - lift + Math.cos(index * 1.7) * cell * 0.4,
-        })
-      }
-      if (points.length < 2) continue
-      context.save()
-      context.globalAlpha = 1 - fade
-      context.lineCap = 'round'
-      context.lineJoin = 'round'
-      context.beginPath()
-      context.moveTo(points[0].x, points[0].y)
-      for (let k = 1; k < points.length; k += 1) {
-        const mid = { x: (points[k - 1].x + points[k].x) / 2, y: (points[k - 1].y + points[k].y) / 2 }
-        context.quadraticCurveTo(points[k - 1].x, points[k - 1].y, mid.x, mid.y)
-      }
-      context.lineTo(points.at(-1).x, points.at(-1).y)
-      context.strokeStyle = 'rgba(0, 0, 0, 0.5)'
-      context.lineWidth = Math.max(1.6, cell * 0.55)
-      context.stroke()
-      context.strokeStyle = THREAD
-      context.lineWidth = Math.max(0.9, cell * 0.3)
-      context.stroke()
-      context.restore()
+      const t = clamp((now - ghost.start) / ghost.duration, 0, 1)
+      this.drawGhostAt(context, ghost, t * t, firstRow, lastRow)
     }
 
     // The thread comes out of the cell being worked, or rests at the

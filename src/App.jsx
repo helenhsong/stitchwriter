@@ -185,15 +185,15 @@ function App() {
     const oldLayout = previousLayoutRef.current
     const ghosts = ghostsRef.current.filter((ghost) => now < ghost.end)
     if (removed > 0 && oldLayout && !reducedMotion) {
-      const gap = removed > 6 ? Math.min(30, 500 / removed) : 60
+      const gap = removed > 6 ? Math.min(30, 500 / removed) : 70
       let order = 0
       for (let index = prefix + removed - 1; index >= prefix; index -= 1) {
         const item = oldLayout.characters[index]
         const birth = oldBirths[index]
         if (!item?.glyph || (birth !== undefined && birth > now)) continue
         const start = now + order * gap
-        const duration = Math.min(220, stitchDuration(item.glyph) * 0.45)
-        ghosts.push({ item, start, duration, end: start + duration + 140 })
+        const duration = Math.min(300, stitchDuration(item.glyph) * 0.6)
+        ghosts.push({ item, start, duration, end: start + duration })
         order += 1
       }
     }
