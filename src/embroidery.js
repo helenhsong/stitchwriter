@@ -46,12 +46,11 @@ export function createGeometry(viewportWidth, viewportHeight) {
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
   const headerRows = Math.ceil(HEADER_HEIGHT / cell)
-  // The seal: an embroidered title with flowers and fairy sparkles at the
-  // top of the page, worked at twice the writing's scale on wide screens.
-  const sealScale = compact ? 1 : 2
+  // The seal: an embroidered title in an oval of flowers and fairy dust
+  // at the top of the page.
   const centre = Math.floor(Math.floor(viewportWidth / cell) / 2)
-  const sealTop = headerRows + (compact ? 12 : 8)
-  const sealBottom = sealTop + 42 * sealScale + 4
+  const sealTop = headerRows + (compact ? 12 : 10)
+  const sealBottom = sealTop + 48
   // Below the seal, open lace for the writing.
   const across = compact
     ? Math.floor(viewportWidth / cell) - 16
@@ -67,7 +66,7 @@ export function createGeometry(viewportWidth, viewportHeight) {
   return {
     cell,
     em,
-    seal: { centre, top: sealTop, bottom: sealBottom, scale: sealScale },
+    seal: { centre, top: sealTop, bottom: sealBottom },
     cols,
     rows,
     frame,
@@ -594,12 +593,24 @@ const SPARKLE = parseChart([
   '..X..',
 ])
 
+const MOON = parseChart([
+  '..XXX',
+  '.XXX.',
+  'XXX..',
+  'XXX..',
+  'XXX..',
+  '.XXX.',
+  '..XXX',
+])
+
+const STAR = parseChart(['.X.', 'XXX', '.X.'])
+
 // The seal over the writing: "type anything" embroidered in the charted
-// script with a looping swash beneath it, ringed by blossoms, a
-// butterfly, bellflowers and trails of fairy dust.
+// script, held in an oval of fairy dust strung with a blossom, a moon, a
+// butterfly, a heart and twinkling stars.
 function sealCells(geometry) {
   const { seal, em } = geometry
-  const { centre, top, scale } = seal
+  const { centre, top } = seal
   const seen = new Set()
   const cells = []
   const mark = (x, y) => {
@@ -610,17 +621,15 @@ function sealCells(geometry) {
     seen.add(key)
     cells.push([gx, gy])
   }
-  // Motifs are worked at the seal's scale, each stitch a small block.
-  const block = (x, y) => {
-    for (let sy = 0; sy < scale; sy += 1) {
-      for (let sx = 0; sx < scale; sx += 1) mark(x + sx, y + sy)
-    }
-  }
+  // Motifs leave a clearing in the fairy dust around them.
+  const clearings = []
   const stamp = (chart, cx, cy) => {
-    const left = Math.round(cx - (chart.width * scale - 1) / 2)
-    const head = Math.round(cy - (chart.height * scale - 1) / 2)
-    for (const [x, y] of chart.cells) block(left + x * scale, head + y * scale)
+    const left = Math.round(cx - (chart.width - 1) / 2)
+    const head = Math.round(cy - (chart.height - 1) / 2)
+    for (const [x, y] of chart.cells) mark(left + x, head + y)
+    clearings.push([cx, cy, Math.max(chart.width, chart.height) / 2 + 2])
   }
+  const clear = (x, y) => clearings.every(([cx, cy, r]) => Math.hypot(x - cx, y - cy) > r)
   // A curve worked as a line of stitches, or as dots spaced along it.
   const trace = (point, length, gap = 0) => {
     const steps = Math.max(8, Math.ceil(length * 3))
@@ -628,78 +637,86 @@ function sealCells(geometry) {
     for (let i = 0; i <= steps; i += 1) {
       const [x, y] = point(i / steps)
       if (gap && last && Math.hypot(x - last[0], y - last[1]) < gap) continue
+      if (gap && !clear(x, y)) continue
       mark(x, y)
       last = [x, y]
     }
   }
 
-  // The title, each charted stitch worked as a block of scale × scale.
+  // The title.
   const title = 'type anything'
   const glyphs = Array.from(title).map((character) =>
     /\s/.test(character) ? null : getGlyph(character, em),
   )
   const space = 4
-  const width = glyphs.reduce((sum, glyph) => sum + (glyph ? glyph.advance : space), 0) * scale
-  const left = centre - width / 2
+  const width = glyphs.reduce((sum, glyph) => sum + (glyph ? glyph.advance : space), 0)
+  const left = Math.round(centre - width / 2)
   const right = left + width
-  const capTop = top + 14 * scale
-  const baseline = capTop + 7 * scale
+  const baseline = top + 24
   let x = left
   for (const glyph of glyphs) {
     if (!glyph) {
-      x += space * scale
+      x += space
       continue
     }
-    for (const [dx, dy] of glyph.cells) block(x + dx * scale, baseline + dy * scale)
-    x += glyph.advance * scale
+    for (const [dx, dy] of glyph.cells) mark(x + dx, baseline + dy)
+    x += glyph.advance
   }
 
-  // A swash under the title: it loops round at the left, sweeps under the
-  // words and curls up at the right.
-  const under = baseline + 6 * scale
-  const loop = 4 * scale
-  trace((t) => {
-    const angle = Math.PI * 0.5 + t * Math.PI * 1.75
-    return [left - loop * 1.1 + Math.cos(angle) * loop, under - loop + Math.sin(angle) * loop * 1.1]
-  }, loop * 8)
-  trace((t) => [
-    left - loop * 1.1 + t * (width + loop * 1.1),
-    under + Math.sin(Math.PI * t) * 2 * scale,
-  ], width)
-  trace((t) => {
-    const angle = Math.PI * 0.5 - t * Math.PI * 1.6
-    const radius = 2.5 * scale * (1 - t * 0.35)
-    return [right + Math.cos(angle) * radius, under - 2.5 * scale + Math.sin(angle) * radius]
-  }, 20 * scale)
+  // A fine swash under the words, curling up into a little spiral at
+  // each end.
+  const under = baseline + 8
+  trace((t) => [left - 1 + t * (width + 2), under + Math.sin(Math.PI * t) * 1.5], width)
+  for (const side of [-1, 1]) {
+    const endX = side < 0 ? left - 1 : right + 1
+    trace((t) => {
+      const angle = Math.PI / 2 - side * t * Math.PI * 1.5
+      const radius = 4.5 * (1 - t * 0.6)
+      return [endX + Math.cos(angle) * radius, under - 4.5 + Math.sin(angle) * radius]
+    }, 22)
+  }
 
-  // Fairy dust drifting up from either end of the title in dotted arcs,
-  // ending in sparkles.
-  const arc = (x0, y0, x1, y1, bulge) => (t) => [
-    x0 + (x1 - x0) * t,
-    y0 + (y1 - y0) * t - Math.sin(Math.PI * t) * bulge,
-  ]
-  const span = width / 2 + 16 * scale
-  trace(arc(left + 4 * scale, capTop - 2 * scale, centre - span, top + 4 * scale, 6 * scale), span, 2.6)
-  trace(arc(right - 4 * scale, capTop - 2 * scale, centre + span, top + 4 * scale, 6 * scale), span, 2.6)
-  stamp(SPARKLE, centre - span - 3, top + 2 * scale)
-  stamp(SPARKLE, centre + span + 3, top + 2 * scale)
+  // The oval: motifs first, so the fairy dust parts around them.
+  const cy = baseline - 3
+  const rx = width / 2 + 14
+  const ry = 19
+  const at = (degrees, push = 0) => {
+    const angle = (degrees * Math.PI) / 180
+    return [centre + Math.cos(angle) * (rx + push), cy - Math.sin(angle) * (ry + push)]
+  }
+  stamp(BLOSSOM, ...at(90))
+  stamp(FORGET_ME_NOT, ...at(90 - 16))
+  stamp(FORGET_ME_NOT, ...at(90 + 16))
+  stamp(MOON, ...at(148, 1))
+  stamp(BUTTERFLY, ...at(30, 4))
+  stamp(SPARKLE, ...at(180))
+  stamp(SPARKLE, ...at(0))
+  stamp(HEART, ...at(270))
+  stamp(BELLFLOWER, ...at(270 - 24))
+  stamp(BELLFLOWER, ...at(270 + 24))
+  stamp(STAR, ...at(205))
+  stamp(STAR, ...at(335))
+  trace((t) => at(t * 360), 2 * Math.PI * rx, 2.4)
 
-  // Blossoms along the top, a butterfly at the right, a heart and a
-  // bellflower sprig at the left, and small flowers and sparkles between.
-  stamp(BLOSSOM, centre, top + 5 * scale)
-  stamp(FORGET_ME_NOT, centre - width * 0.24, top + 8 * scale)
-  stamp(FORGET_ME_NOT, centre + width * 0.26, top + 7 * scale)
-  stamp(SPARKLE, centre - width * 0.4, top + 4 * scale)
-  stamp(SPARKLE, centre + width * 0.12, top + 3 * scale)
-  stamp(BUTTERFLY, right + 12 * scale, capTop + 2 * scale)
-  stamp(HEART, left - 13 * scale, capTop + 1 * scale)
-  stamp(BLOSSOM, right + 7 * scale, under + 4 * scale)
-  stamp(FORGET_ME_NOT, left - 15 * scale, under + 3 * scale)
-  // A bellflower sprig hanging from the swash.
-  const sprigX = centre + width * 0.2
-  trace((t) => [sprigX + Math.sin(t * Math.PI) * scale, under + 2 * scale + t * 6 * scale], 7 * scale)
-  stamp(BELLFLOWER, sprigX, under + 10 * scale)
-  stamp(SPARKLE, centre - width * 0.28, under + 6 * scale)
+  // Twinkles strewn about the oval: lone stitches and tiny stars, placed
+  // by a fixed hand so the seal is the same every time.
+  let seed = 7
+  const random = () => {
+    seed = (seed * 16807) % 2147483647
+    return seed / 2147483647
+  }
+  for (let i = 0; i < 26; i += 1) {
+    const degrees = random() * 360
+    const push = (random() < 0.5 ? -1 : 1) * (3 + random() * 5)
+    const [tx, ty] = at(degrees, push)
+    if (ty < top - 4 || !clear(tx, ty)) continue
+    if (tx > left - 2 && tx < right + 2 && ty > baseline - 14 && ty < under + 4) continue
+    if (random() < 0.3) stamp(STAR, tx, ty)
+    else {
+      mark(tx, ty)
+      clearings.push([tx, ty, 1.5])
+    }
+  }
   return cells
 }
 
