@@ -103,7 +103,6 @@ function codePointLength(value) {
 function App() {
   const [text, setText] = useState('')
   const [caret, setCaret] = useState(0)
-  const [scrollRows, setScrollRows] = useState(0)
   const canvasRef = useRef(null)
   const mainRef = useRef(null)
   const rendererRef = useRef(null)
@@ -128,7 +127,7 @@ function App() {
   const overflowRows = layout
     ? Math.max(0, layout.height - geometry.visibleTextRows)
     : 0
-  const visibleScrollRows = Math.min(scrollRows, overflowRows)
+  const maxScroll = overflowRows * geometry.cell
   const documentHeight = viewport.height + overflowRows * geometry.cell
   // The piece itself grows downward as the writing overflows it.
   const pieceGeometry = useMemo(
@@ -198,18 +197,11 @@ function App() {
     previousTextRef.current = text
   }, [layout, reducedMotion, text])
 
-  useEffect(() => {
-    const update = () => setScrollRows(Math.floor(window.scrollY / geometry.cell))
-    update()
-    window.addEventListener('scroll', update, { passive: true })
-    return () => window.removeEventListener('scroll', update)
-  }, [geometry.cell])
-
   useLayoutEffect(() => {
     sceneRef.current = layout
       ? {
           layout,
-          scrollRows: visibleScrollRows,
+          maxScroll,
           pieceGeometry,
           births: birthsRef.current,
           placeholder,
@@ -217,7 +209,7 @@ function App() {
           reducedMotion,
         }
       : null
-  }, [caretCell, layout, pieceGeometry, placeholder, reducedMotion, visibleScrollRows])
+  }, [caretCell, layout, maxScroll, pieceGeometry, placeholder, reducedMotion])
 
   useEffect(() => {
     if (!fontReady || readmeOpen || !canvasRef.current) return undefined
@@ -235,14 +227,27 @@ function App() {
       const renderer = rendererRef.current
       if (scene && renderer) {
         scene.births = birthsRef.current
+        // Read the scroll position every frame so the lace moves with the
+        // page smoothly instead of in steps.
+        scene.scrollY = window.scrollY
         renderer.draw(scene, now)
       }
       if (!reducedMotion) frame = requestAnimationFrame(paint)
     }
 
     frame = requestAnimationFrame(paint)
-    return () => cancelAnimationFrame(frame)
-  }, [caret, fontReady, geometry, readmeOpen, reducedMotion, scrollRows, text])
+    // With reduced motion there is no running loop, so repaint on scroll.
+    const onScroll = () => {
+      if (!reducedMotion) return
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(paint)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', onScroll)
+    }
+  }, [caret, fontReady, geometry, readmeOpen, reducedMotion, text])
 
   // Ready to type as soon as the page opens, and any key typed while focus
   // is elsewhere on the page goes to the lace.
@@ -263,9 +268,12 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [fontReady, readmeOpen])
 
-  // Keep the insertion point on screen as the piece grows.
+  // Keep the insertion point on screen as the piece grows. This only runs
+  // when the writing or the insertion point changes, never on scroll, so
+  // the page can be scrolled freely.
   useEffect(() => {
     if (!layout || placeholder) return
+    const scrollRows = window.scrollY / geometry.cell
     const caretBottom =
       geometry.textTop +
       geometry.baselineOffset +
@@ -284,7 +292,7 @@ function App() {
     } else if (caretTop - scrollRows < headerRows + 1) {
       window.scrollTo({ top: Math.max(0, caretTop - headerRows - 1) * geometry.cell })
     }
-  }, [caretCell.line, geometry, layout, placeholder, scrollRows])
+  }, [caretCell.line, geometry, layout, placeholder])
 
   const syncCaret = (input) => {
     const offset = input.selectionDirection === 'backward'
@@ -296,10 +304,11 @@ function App() {
   // Map a pointer position to an insertion point in the writing, if any.
   const hitTest = (clientX, clientY) => {
     if (!layout || placeholder) return null
+    const scrollRows = Math.min(window.scrollY, maxScroll) / geometry.cell
     const col = clientX / geometry.cell - geometry.textLeft
-    const row = clientY / geometry.cell - geometry.textTop + visibleScrollRows
+    const row = clientY / geometry.cell - geometry.textTop + scrollRows
     const x = clientX / geometry.cell
-    const y = clientY / geometry.cell + visibleScrollRows
+    const y = clientY / geometry.cell + scrollRows
     const { inner } = pieceGeometry
     const insideBorder =
       x >= inner.left && x <= inner.right + 1 && y >= inner.top && y <= inner.bottom + 1

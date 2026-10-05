@@ -18,6 +18,9 @@ const SUBSAMPLE = 8
 const COVERAGE = 0.42
 const CELL_FILL_MS = 110
 const BLOCK_VARIANTS = 6
+// The mesh pattern repeats every this many rows, so the open lace can
+// scroll smoothly with the page by sliding one painted strip.
+const MESH_PERIOD = 16
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max)
@@ -306,8 +309,8 @@ function vertex(geometry, i, j) {
   const { cell, lineWidth } = geometry
   const wobble = cell * 0.07
   return {
-    x: i * cell + lineWidth / 2 + (hash(i, j) - 0.5) * wobble,
-    y: j * cell + lineWidth / 2 + (hash(j + 91, i) - 0.5) * wobble,
+    x: i * cell + lineWidth / 2 + (hash(i, j % MESH_PERIOD) - 0.5) * wobble,
+    y: j * cell + lineWidth / 2 + (hash((j % MESH_PERIOD) + 91, i) - 0.5) * wobble,
   }
 }
 
@@ -375,14 +378,15 @@ function paintMesh(context, geometry) {
   const knots = []
 
   for (let j = 0; j <= rows; j += 1) {
+    const jp = j % MESH_PERIOD
     for (let i = 0; i <= cols; i += 1) {
       const here = vertex(geometry, i, j)
       knots.push(here)
       if (i < cols) {
-        buckets[Math.floor(hash(i * 3 + 1, j) * 3)].push([here, vertex(geometry, i + 1, j)])
+        buckets[Math.floor(hash(i * 3 + 1, jp) * 3)].push([here, vertex(geometry, i + 1, j)])
       }
       if (j < rows) {
-        buckets[Math.floor(hash(i, j * 3 + 2) * 3)].push([here, vertex(geometry, i, j + 1)])
+        buckets[Math.floor(hash(i, jp * 3 + 2) * 3)].push([here, vertex(geometry, i, j + 1)])
       }
     }
   }
@@ -424,15 +428,16 @@ function paintMesh(context, geometry) {
   // Stray fibres.
   const fuzz = new Path2D()
   for (let j = 0; j < rows; j += 1) {
+    const jp = j % MESH_PERIOD
     for (let i = 0; i < cols; i += 1) {
-      if (hash(i * 7 + 3, j * 5 + 1) > 0.18) continue
+      if (hash(i * 7 + 3, jp * 5 + 1) > 0.18) continue
       const start = vertex(geometry, i, j)
-      const along = hash(i, j * 13) * geometry.cell
-      const horizontal = hash(j, i * 17) > 0.5
+      const along = hash(i, jp * 13) * geometry.cell
+      const horizontal = hash(jp, i * 17) > 0.5
       const x = start.x + (horizontal ? along : 0)
       const y = start.y + (horizontal ? 0 : along)
-      const angle = hash(i * 19, j * 23) * Math.PI * 2
-      const length = geometry.cell * (0.25 + hash(i * 29, j) * 0.4)
+      const angle = hash(i * 19, jp * 23) * Math.PI * 2
+      const length = geometry.cell * (0.25 + hash(i * 29, jp) * 0.4)
       fuzz.moveTo(x, y)
       fuzz.quadraticCurveTo(
         x + Math.cos(angle + 0.8) * length * 0.6,
@@ -874,91 +879,81 @@ function threadWidth(geometry) {
   return Math.max(1.6, geometry.cell * 0.5)
 }
 
-// At rest: the loose end of the thread comes out of the lace at the
-// insertion point and hangs down under its own weight.
-function drawRestingThread(context, origin, geometry, swing) {
+const lerp = (a, b, t) => a + (b - a) * t
+
+// The thread is one continuous strand from the lace to the hand off the
+// edge of the piece. While stitching it runs taut up to the hand, and each
+// stitch is worked as a loop drawn up out of the mesh and pulled tight
+// while the hand circles to wrap the yarn for the next one. At rest the
+// hand drops and the thread goes slack, draping down and away from the
+// insertion point. `tension` moves smoothly between the two, so the thread
+// never vanishes or pops.
+function drawThread(context, origin, geometry, { stitch, progress, tension, swing }) {
   const { cell } = geometry
   const width = threadWidth(geometry)
-  const length = Math.max(48, geometry.em * cell * 0.85)
-  const end = {
-    x: origin.x + cell * 2 + swing * cell * 2,
-    y: origin.y + length,
-  }
-  const points = bezierPoints(
-    origin,
-    { x: origin.x + cell * 3, y: origin.y + length * 0.18 },
-    { x: end.x - cell * 1.5 - swing * cell * 1.4, y: origin.y + length * 0.62 },
-    end,
-    28,
-  )
-  drawStrand(context, points, width)
+  const ease = tension * tension * (3 - 2 * tension)
+  const count = 24
 
-  // Frayed tail: the plies splay apart at the cut end.
-  const tail = points.at(-1)
-  const before = points.at(-3)
-  const angle = Math.atan2(tail.y - before.y, tail.x - before.x)
-  context.save()
-  context.lineCap = 'round'
-  context.strokeStyle = THREAD
-  context.lineWidth = Math.max(0.5, width * 0.28)
-  for (const spread of [-0.45, 0.05, 0.5]) {
-    context.beginPath()
-    context.moveTo(tail.x, tail.y)
-    context.quadraticCurveTo(
-      tail.x + Math.cos(angle + spread * 0.5) * width * 1.6,
-      tail.y + Math.sin(angle + spread * 0.5) * width * 1.6,
-      tail.x + Math.cos(angle + spread) * width * 2.6,
-      tail.y + Math.sin(angle + spread) * width * 2.6,
-    )
-    context.stroke()
-  }
-  context.restore()
-}
-
-// While stitching: the working thread runs taut from the stitch up to the
-// hand off the edge of the piece. Each stitch is worked as a loop that is
-// drawn up out of the mesh and pulled tight, while the hand circles to
-// wrap the yarn for the next one.
-function drawWorkingThread(context, origin, geometry, stitch, progress) {
-  const { cell } = geometry
-  const width = threadWidth(geometry)
+  // Taut, working.
   const turn = (stitch + progress) * Math.PI * 2
-  const angle = -Math.PI * 0.36
-  const reach = 150
-  // The hand tugs back as each loop closes.
+  const workAngle = -Math.PI * 0.36
   const tug = (1 - progress) ** 3 * 8
   const hand = {
-    x: origin.x + Math.cos(angle) * (reach - tug) + Math.cos(turn) * 7,
-    y: origin.y + Math.sin(angle) * (reach - tug) + Math.sin(turn) * 5,
+    x: origin.x + Math.cos(workAngle) * (150 - tug) + Math.cos(turn) * 7,
+    y: origin.y + Math.sin(workAngle) * (150 - tug) + Math.sin(turn) * 5,
   }
-
-  // The loop being pulled through shrinks as it tightens.
-  const loop = Math.max(2.4, cell * 1.6) * (1 - progress * 0.8)
+  const loop = Math.max(2.4, cell * 1.6) * (1 - progress * 0.8) * ease
   const loopTop = { x: origin.x + loop * 0.3, y: origin.y - loop * 1.8 }
-  context.save()
-  context.lineCap = 'round'
-  context.beginPath()
-  context.ellipse(origin.x, origin.y - loop * 0.9, loop * 0.7, loop, 0.25, 0, Math.PI * 2)
-  context.strokeStyle = 'rgba(0, 0, 0, 0.5)'
-  context.lineWidth = width * 1.2
-  context.stroke()
-  context.strokeStyle = THREAD
-  context.lineWidth = width * 0.8
-  context.stroke()
-  context.restore()
-
   const sag = 10 + Math.sin(turn) * 3
-  const points = bezierPoints(
+  const taut = bezierPoints(
     loopTop,
-    { x: loopTop.x + (hand.x - loopTop.x) * 0.3, y: loopTop.y + (hand.y - loopTop.y) * 0.3 + sag },
-    { x: loopTop.x + (hand.x - loopTop.x) * 0.7, y: loopTop.y + (hand.y - loopTop.y) * 0.7 + sag * 0.6 },
+    { x: lerp(loopTop.x, hand.x, 0.3), y: lerp(loopTop.y, hand.y, 0.3) + sag },
+    { x: lerp(loopTop.x, hand.x, 0.7), y: lerp(loopTop.y, hand.y, 0.7) + sag * 0.6 },
     hand,
-    20,
+    count,
   )
-  points.push({
-    x: hand.x + Math.cos(angle) * 2400,
-    y: hand.y + Math.sin(angle) * 2400,
-  })
+  taut.push({ x: hand.x + Math.cos(workAngle) * 2400, y: hand.y + Math.sin(workAngle) * 2400 })
+
+  // Slack, resting: it bows out of the lace and falls away under its own
+  // weight, swaying a little.
+  const restAngle = Math.PI * 0.2
+  const drop = Math.max(70, geometry.em * cell * 1.1)
+  const rest = {
+    x: origin.x + cell * 10 + swing * cell * 2,
+    y: origin.y + drop,
+  }
+  const slack = bezierPoints(
+    origin,
+    { x: origin.x + cell * 3, y: origin.y + drop * 0.35 },
+    {
+      x: rest.x - Math.cos(restAngle) * drop * 0.45 - swing * cell * 1.4,
+      y: rest.y - Math.sin(restAngle) * drop * 0.45,
+    },
+    rest,
+    count,
+  )
+  slack.push({ x: rest.x + Math.cos(restAngle) * 2400, y: rest.y + Math.sin(restAngle) * 2400 })
+
+  const points = slack.map((point, index) => ({
+    x: lerp(point.x, taut[index].x, ease),
+    y: lerp(point.y, taut[index].y, ease),
+  }))
+  // Where the thread leaves the lace.
+  points.unshift({ ...origin })
+
+  if (loop > 0.4) {
+    context.save()
+    context.lineCap = 'round'
+    context.beginPath()
+    context.ellipse(origin.x, origin.y - loop * 0.9, loop * 0.7, loop, 0.25, 0, Math.PI * 2)
+    context.strokeStyle = 'rgba(0, 0, 0, 0.5)'
+    context.lineWidth = width * 1.2
+    context.stroke()
+    context.strokeStyle = THREAD
+    context.lineWidth = width * 0.8
+    context.stroke()
+    context.restore()
+  }
   drawStrand(context, points, width)
 }
 
@@ -980,9 +975,15 @@ export class LaceRenderer {
     this.canvas.width = Math.round(width * ratio)
     this.canvas.height = Math.round(height * ratio)
     this.blocks = makeBlockSprites(geometry, ratio)
-    this.meshLayer = makeCanvas(width, height, ratio)
+    // The writing is painted for a band of rows taller than the viewport, so
+    // scrolling slides the band and repaints only when it runs out.
+    this.band = Math.max(24, Math.ceil(geometry.rows * 0.5))
+    this.layerRows = geometry.rows + this.band + 2
+    this.velvetLayer = makeCanvas(width, height, ratio)
+    this.meshLayer = makeCanvas(width, height + (MESH_PERIOD + 1) * geometry.cell, ratio)
     this.holesLayer = makeCanvas(width, height, ratio)
-    this.textLayer = makeCanvas(width, height, ratio)
+    this.textLayer = makeCanvas(width, this.layerRows * geometry.cell, ratio)
+    this.bandStart = 0
     this.ornamentKey = ''
     this.paintBase()
     this.textKey = ''
@@ -1020,13 +1021,17 @@ export class LaceRenderer {
     }
   }
 
-  // The fixed layers: velvet and open mesh fill the viewport, and the
+  // The fixed layers: the velvet ground stays put behind the lace, the open
+  // mesh is one repeating strip that slides as the page scrolls, and the
   // header links get holes cut in the lace above everything else.
   paintBase() {
     const { geometry } = this
     const { cell, lineWidth } = geometry
-    paintVelvet(this.meshLayer.context, this.width, this.height)
-    paintMesh(this.meshLayer.context, geometry)
+    paintVelvet(this.velvetLayer.context, this.width, this.height)
+    paintMesh(this.meshLayer.context, {
+      ...geometry,
+      rows: geometry.rows + MESH_PERIOD + 1,
+    })
     soften(this.meshLayer, this.ratio * 0.3)
 
     // Cut a hole in the lace under each header link, finished with a solid
@@ -1055,22 +1060,20 @@ export class LaceRenderer {
     soften(this.holesLayer, this.ratio * 0.45)
   }
 
-  // Map a text cell to viewport grid coordinates, or null when it is off
-  // screen. The whole piece scrolls with the page, row by row.
-  toGrid(col, row, scrollRows) {
+  // Map a text cell to document grid coordinates.
+  toGrid(col, row) {
     const { geometry } = this
-    const gx = geometry.textLeft + col
-    const gy = geometry.textTop + row - scrollRows
-    if (gx < -1 || gx > geometry.cols || gy < -1 || gy > geometry.rows) return null
-    return { gx, gy }
+    return { gx: geometry.textLeft + col, gy: geometry.textTop + row }
   }
 
+  // Paint the writing and its border for the rows of the current band.
   renderText(scene, animating) {
-    const { geometry } = this
+    const { geometry, bandStart, layerRows } = this
     const { context } = this.textLayer
-    const { layout, scrollRows, placeholder, pieceGeometry } = scene
-    const { cell, lineWidth, rows } = geometry
-    context.clearRect(0, 0, this.width, this.height)
+    const { layout, placeholder, pieceGeometry } = scene
+    const { cell, lineWidth, cols } = geometry
+    context.clearRect(0, 0, this.width, layerRows * cell)
+    const inBand = (gx, gy) => gx >= -1 && gx <= cols && gy >= -1 && gy <= layerRows
 
     // The border and ornaments grow with the writing, so they live in
     // document space and scroll with it.
@@ -1080,11 +1083,10 @@ export class LaceRenderer {
       this.ornamentKey = ornamentKey
     }
     for (const [x, y] of this.ornaments) {
-      const gy = y - scrollRows
-      if (gy >= -1 && gy <= rows) this.drawBlock(context, x, gy)
+      if (inBand(x, y - bandStart)) this.drawBlock(context, x, y - bandStart)
     }
     context.save()
-    context.translate(0, -scrollRows * cell)
+    context.translate(0, -bandStart * cell)
     paintPicots(context, pieceGeometry)
     context.restore()
 
@@ -1092,23 +1094,24 @@ export class LaceRenderer {
       if (!item.glyph || animating.has(item.index)) continue
       const baseRow = geometry.baselineOffset + item.line * geometry.lineHeight
       for (const [dx, dy] of item.glyph.cells) {
-        const point = this.toGrid(item.col + dx, baseRow + dy, scrollRows)
-        if (!point) continue
+        const { gx, gy: row } = this.toGrid(item.col + dx, baseRow + dy)
+        const gy = row - bandStart
+        if (!inBand(gx, gy)) continue
         if (placeholder) {
           // Pattern-chart dots, as if the design were inked onto the lace.
           const dot = Math.max(1.5, cell * 0.36)
           context.fillStyle = 'rgba(240, 240, 238, 0.42)'
           context.beginPath()
           context.arc(
-            point.gx * cell + lineWidth + (cell - lineWidth) / 2,
-            point.gy * cell + lineWidth + (cell - lineWidth) / 2,
+            gx * cell + lineWidth + (cell - lineWidth) / 2,
+            gy * cell + lineWidth + (cell - lineWidth) / 2,
             dot / 2,
             0,
             Math.PI * 2,
           )
           context.fill()
         } else {
-          this.drawBlock(context, point.gx, point.gy)
+          this.drawBlock(context, gx, gy)
         }
       }
     }
@@ -1125,7 +1128,19 @@ export class LaceRenderer {
 
   draw(scene, now) {
     const { geometry, ratio, context } = this
-    const { layout, scrollRows, births, placeholder, caret, reducedMotion } = scene
+    const { layout, births, placeholder, caret, reducedMotion } = scene
+    const { cell, rows } = geometry
+
+    // Follow the page scroll exactly, snapped to device pixels so the
+    // writing, mesh and thread move as one.
+    const scrollY = Math.round(clamp(scene.scrollY, 0, scene.maxScroll) * ratio) / ratio
+    const scrollRow = Math.floor(scrollY / cell)
+    const firstRow = scrollRow - 1
+    const lastRow = scrollRow + rows + 1
+    if (scrollRow < this.bandStart || scrollRow + rows + 1 > this.bandStart + this.layerRows) {
+      this.bandStart = Math.max(0, scrollRow - Math.floor(this.band / 2))
+      this.textKey = ''
+    }
 
     const animating = new Set()
     let active = null
@@ -1141,7 +1156,7 @@ export class LaceRenderer {
 
     const textKey = [
       layout.characters.map((item) => `${item.col},${item.line}`).join(';'),
-      scrollRows,
+      this.bandStart,
       placeholder,
       scene.pieceGeometry.frame.bottom,
       [...animating].join(','),
@@ -1151,10 +1166,14 @@ export class LaceRenderer {
       this.textKey = textKey
     }
 
+    const meshOffset = Math.round((scrollY % (MESH_PERIOD * cell)) * ratio)
+    const textOffset = Math.round((scrollY - this.bandStart * cell) * ratio)
     context.setTransform(1, 0, 0, 1, 0, 0)
-    context.drawImage(this.meshLayer.canvas, 0, 0)
-    context.drawImage(this.textLayer.canvas, 0, 0)
-    context.setTransform(ratio, 0, 0, ratio, 0, 0)
+    context.drawImage(this.velvetLayer.canvas, 0, 0)
+    context.drawImage(this.meshLayer.canvas, 0, -meshOffset)
+    context.drawImage(this.textLayer.canvas, 0, -textOffset)
+    // Everything below is drawn in document coordinates.
+    context.setTransform(ratio, 0, 0, ratio, 0, -scrollY * ratio)
 
     for (const item of layout.characters) {
       if (!animating.has(item.index)) continue
@@ -1166,16 +1185,16 @@ export class LaceRenderer {
         const start = birth + (cellIndex / cells.length) * duration
         const progress = clamp((now - start) / CELL_FILL_MS, 0, 1)
         if (progress <= 0) return
-        const point = this.toGrid(item.col + dx, baseRow + dy, scrollRows)
-        if (point) this.drawBlock(context, point.gx, point.gy, progress)
+        const { gx, gy } = this.toGrid(item.col + dx, baseRow + dy)
+        if (gy >= firstRow && gy <= lastRow) this.drawBlock(context, gx, gy, progress)
       })
     }
 
     // The thread comes out of the cell being worked, or rests at the
     // insertion point.
-    let target = null
+    let target
     let working = false
-    let stitch = this.lastStitch ?? null
+    let stitch = this.lastStitch ?? { index: 0, progress: 1 }
     if (active) {
       const { item, birth, duration } = active
       const { cells } = item.glyph
@@ -1185,27 +1204,18 @@ export class LaceRenderer {
       this.lastStitch = { ...stitch, progress: 1 }
       const [dx, dy] = cells[position]
       const baseRow = geometry.baselineOffset + item.line * geometry.lineHeight
-      const point = this.toGrid(item.col + dx, baseRow + dy, scrollRows)
-      if (point) {
-        target = this.cellCenter(point.gx, point.gy)
-        working = true
-      }
-    }
-    if (!target) {
+      const { gx, gy } = this.toGrid(item.col + dx, baseRow + dy)
+      target = this.cellCenter(gx, gy)
+      working = true
+    } else {
       const row = geometry.baselineOffset + caret.line * geometry.lineHeight - Math.round(geometry.em * 0.28)
-      const point = this.toGrid(caret.col, row, scrollRows)
-      if (point) {
-        target = this.cellCenter(point.gx, point.gy)
-        target.x -= geometry.cell / 2
-      }
+      const { gx, gy } = this.toGrid(caret.col, row)
+      target = this.cellCenter(gx, gy)
+      target.x -= cell / 2
     }
 
     const elapsed = this.lastFrame ? Math.min(64, now - this.lastFrame) : 16
     this.lastFrame = now
-    if (!target) {
-      this.drawHoles()
-      return
-    }
     if (!this.anchor || reducedMotion) {
       this.anchor = { ...target, velocity: 0 }
     } else {
@@ -1213,27 +1223,26 @@ export class LaceRenderer {
       const follow = 1 - Math.exp(-elapsed / (working ? 22 : 60))
       this.anchor.x += (target.x - this.anchor.x) * follow
       this.anchor.y += (target.y - this.anchor.y) * follow
-      // Moving the thread sets its tail swinging; it settles back slowly.
-      const moved = (this.anchor.x - previousX) / geometry.cell
+      // Moving the thread sets it swinging; it settles back slowly.
+      const moved = (this.anchor.x - previousX) / cell
       this.anchor.velocity = clamp(this.anchor.velocity * 0.9 - moved * 0.08, -0.8, 0.8)
     }
 
-    // Ease between the taut working thread and the loose hanging end.
+    // Ease between the taut working thread and the slack resting one. The
+    // thread relaxes more slowly than it tightens, like letting go of yarn.
     const tensionTarget = working && !reducedMotion ? 1 : 0
+    const settle = tensionTarget > (this.tension ?? 0) ? 90 : 420
     this.tension = reducedMotion
       ? tensionTarget
-      : (this.tension ?? 0) + (tensionTarget - (this.tension ?? 0)) * (1 - Math.exp(-elapsed / 90))
+      : (this.tension ?? 0) + (tensionTarget - (this.tension ?? 0)) * (1 - Math.exp(-elapsed / settle))
 
-    if (this.tension < 0.98) {
-      const idleSway = reducedMotion ? 0 : Math.sin(now / 1100) * 0.18
-      context.globalAlpha = 1 - this.tension
-      drawRestingThread(context, this.anchor, geometry, idleSway + this.anchor.velocity)
-    }
-    if (this.tension > 0.02 && stitch) {
-      context.globalAlpha = this.tension
-      drawWorkingThread(context, this.anchor, geometry, stitch.index, stitch.progress)
-    }
-    context.globalAlpha = 1
+    const idleSway = reducedMotion ? 0 : Math.sin(now / 1100) * 0.18
+    drawThread(context, this.anchor, geometry, {
+      stitch: stitch.index,
+      progress: stitch.progress,
+      tension: this.tension,
+      swing: idleSway + this.anchor.velocity,
+    })
     this.drawHoles()
   }
 
