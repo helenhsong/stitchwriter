@@ -94,23 +94,25 @@ export function createGeometry(viewportWidth, viewportHeight) {
 const glyphCache = new Map()
 let measureContext = null
 
-function getMeasureContext(em) {
+function getMeasureContext(em, face) {
   if (!measureContext) {
     measureContext = document.createElement('canvas').getContext('2d')
   }
-  measureContext.font = `${STITCH_FONT_STYLE} ${em * SUBSAMPLE}px ${STITCH_FONT}`
+  measureContext.font = face
+    ? `${face.style} ${em * SUBSAMPLE}px ${face.family}`
+    : `${STITCH_FONT_STYLE} ${em * SUBSAMPLE}px ${STITCH_FONT}`
   return measureContext
 }
 
 // Rasterize one character to filet cells. Cells are relative to the glyph's
 // origin column and baseline row, and are ordered the way they are worked:
 // row by row, turning back at the end of each row like crochet.
-export function getGlyph(character, em) {
-  const cacheKey = `${em}:${character}`
+export function getGlyph(character, em, face) {
+  const cacheKey = `${em}:${face?.style ?? ''}${face?.family ?? ''}:${character}`
   const cached = glyphCache.get(cacheKey)
   if (cached) return cached
 
-  const measure = getMeasureContext(em)
+  const measure = getMeasureContext(em, face)
   const advance = measure.measureText(character).width / SUBSAMPLE
   const pad = Math.ceil(em * 0.5)
   const ascent = Math.ceil(em * 1.05)
@@ -909,14 +911,33 @@ function ornamentCells(geometry) {
 
   // A ribbon bow tied over the top arch.
   const ribbon = bow(motif * 3 + 4)
+  const ribbonTop = frame.top - Math.round(ribbon.height * 0.5)
   for (const [x, y] of ribbon.cells) {
-    cells.push([
-      Math.round(middle - ribbon.width / 2) + x,
-      frame.top - Math.round(ribbon.height * 0.5) + y,
-    ])
+    cells.push([Math.round(middle - ribbon.width / 2) + x, ribbonTop + y])
+  }
+
+  // A small italic caption worked over the bow, its letters stepping up
+  // and down a gentle arc.
+  const glyphs = Array.from(CAPTION).map((character) =>
+    getGlyph(character, CAPTION_EM, CAPTION_FACE),
+  )
+  const total = glyphs.reduce((sum, glyph) => sum + glyph.advance, 0)
+  const baseline = ribbonTop - 1
+  let x = middle - total / 2
+  for (const glyph of glyphs) {
+    const t = (x + glyph.advance / 2 - middle) / (total / 2)
+    const rise = Math.round(CAPTION_EM * 0.45 * (1 - t * t))
+    for (const [dx, dy] of glyph.cells) cells.push([Math.round(x) + dx, baseline - rise + dy])
+    x += glyph.advance
   }
   return cells
 }
+
+const CAPTION = 'type anything you want'
+const CAPTION_EM = 14
+// A sturdier italic than the writing's, so the small letters survive
+// being charted to so few cells.
+const CAPTION_FACE = { style: 'italic 400', family: 'Georgia, "Times New Roman", serif' }
 
 // Picot loops all around the outside of the border: the scalloped edge
 // that finishes a piece of lace.
@@ -1198,43 +1219,6 @@ function drawFray(context, points, width, amount) {
   context.restore()
 }
 
-const CAPTION = 'type anything you want'
-const CAPTION_FONT = `${STITCH_FONT_STYLE} 13px ${STITCH_FONT}`
-
-// A small italic caption set on a gentle arc just above the ribbon bow,
-// worked in fine white thread. Drawn in document pixels.
-function drawCaption(context, geometry) {
-  const { cell, frame, motif } = geometry
-  const middle = ((frame.left + frame.right + 1) / 2) * cell
-  const bowHeight = Math.round((motif * 3 + 4) * 0.45)
-  const top = (frame.top - Math.round(bowHeight * 0.5)) * cell
-  const baseline = top - 9
-  const radius = 260
-
-  context.save()
-  context.font = CAPTION_FONT
-  context.textBaseline = 'alphabetic'
-  context.lineJoin = 'round'
-  const total = context.measureText(CAPTION).width * 1.06
-  let along = -total / 2
-  for (const character of CAPTION) {
-    const width = context.measureText(character).width * 1.06
-    const angle = (along + width / 2) / radius
-    context.save()
-    // Centre of the arc sits below the caption, so it curves over the bow.
-    context.translate(middle + Math.sin(angle) * radius, baseline + radius - Math.cos(angle) * radius)
-    context.rotate(angle)
-    context.strokeStyle = 'rgba(10, 10, 10, 0.75)'
-    context.lineWidth = 2.2
-    context.strokeText(character, -width / 2, 0)
-    context.fillStyle = THREAD
-    context.fillText(character, -width / 2, 0)
-    context.restore()
-    along += width
-  }
-  context.restore()
-}
-
 export class LaceRenderer {
   constructor(canvas) {
     this.canvas = canvas
@@ -1484,8 +1468,6 @@ export class LaceRenderer {
         if (gy >= firstRow && gy <= lastRow) this.drawBlock(context, gx, gy, progress)
       })
     }
-
-    drawCaption(context, scene.pieceGeometry)
 
     // The thread comes out of the cell being worked, or rests at the
     // insertion point.
