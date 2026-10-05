@@ -1198,6 +1198,55 @@ function drawFray(context, points, width, amount) {
   context.restore()
 }
 
+const HINT = 'just start typing'
+const HINT_FONT = `${STITCH_FONT_STYLE} 15px ${STITCH_FONT}`
+
+// The tiny hint shown before anything is written, set on the first line
+// just after the insertion point, as letters in document pixels.
+function hintLetters(context, geometry) {
+  const { cell } = geometry
+  context.font = HINT_FONT
+  let x = (geometry.textLeft + 4) * cell
+  const y = (geometry.textTop + geometry.baselineOffset - Math.round(geometry.em * 0.3)) * cell
+  return Array.from(HINT).map((character, index) => {
+    const width = context.measureText(character).width
+    const letter = { character, x, y, width, seed: hash(index * 13 + 3, 7) }
+    x += width
+    return letter
+  })
+}
+
+// Draw the hint as fine white thread worked over the mesh. Once writing
+// begins, its letters come loose one by one and drop away.
+function drawHint(context, letters, shed) {
+  let visible = false
+  context.save()
+  context.font = HINT_FONT
+  context.textBaseline = 'alphabetic'
+  context.lineJoin = 'round'
+  for (const letter of letters) {
+    const t = shed === null ? 0 : clamp((shed - letter.seed * 520) / 900, 0, 1)
+    if (t >= 1) continue
+    visible = true
+    const fall = t * t
+    context.save()
+    context.globalAlpha = 1 - fall
+    context.translate(
+      letter.x + letter.width / 2 + (letter.seed - 0.5) * 18 * t,
+      letter.y + fall * 46,
+    )
+    context.rotate((letter.seed - 0.5) * 1.6 * t)
+    context.strokeStyle = 'rgba(10, 10, 10, 0.85)'
+    context.lineWidth = 3
+    context.strokeText(letter.character, -letter.width / 2, 0)
+    context.fillStyle = THREAD
+    context.fillText(letter.character, -letter.width / 2, 0)
+    context.restore()
+  }
+  context.restore()
+  return visible
+}
+
 export class LaceRenderer {
   constructor(canvas) {
     this.canvas = canvas
@@ -1340,8 +1389,8 @@ export class LaceRenderer {
   renderText(scene, animating) {
     const { geometry, bandStart, layerRows } = this
     const { context } = this.textLayer
-    const { layout, placeholder, pieceGeometry } = scene
-    const { cell, lineWidth, cols } = geometry
+    const { layout, pieceGeometry } = scene
+    const { cell, cols } = geometry
     context.clearRect(0, 0, this.width, layerRows * cell)
     const inBand = (gx, gy) => gx >= -1 && gx <= cols && gy >= -1 && gy <= layerRows
 
@@ -1370,23 +1419,7 @@ export class LaceRenderer {
       for (const [dx, dy] of item.glyph.cells) {
         const { gx, gy: row } = this.toGrid(item.col + dx, baseRow + dy)
         const gy = row - bandStart
-        if (!inBand(gx, gy)) continue
-        if (placeholder) {
-          // Pattern-chart dots, as if the design were inked onto the lace.
-          const dot = Math.max(1.5, cell * 0.36)
-          context.fillStyle = 'rgba(240, 240, 238, 0.42)'
-          context.beginPath()
-          context.arc(
-            gx * cell + lineWidth + (cell - lineWidth) / 2,
-            gy * cell + lineWidth + (cell - lineWidth) / 2,
-            dot / 2,
-            0,
-            Math.PI * 2,
-          )
-          context.fill()
-        } else {
-          this.drawBlock(context, gx, gy)
-        }
+        if (inBand(gx, gy)) this.drawBlock(context, gx, gy)
       }
     }
     soften(this.textLayer, this.ratio * 0.3)
@@ -1420,7 +1453,7 @@ export class LaceRenderer {
     let active = null
     for (const item of layout.characters) {
       const birth = births[item.index]
-      if (!item.glyph || placeholder || birth === undefined) continue
+      if (!item.glyph || birth === undefined) continue
       const duration = stitchDuration(item.glyph)
       if (now < birth + duration + CELL_FILL_MS) animating.add(item.index)
       if (now >= birth && now < birth + duration && (!active || birth >= active.birth)) {
@@ -1462,6 +1495,17 @@ export class LaceRenderer {
         const { gx, gy } = this.toGrid(item.col + dx, baseRow + dy)
         if (gy >= firstRow && gy <= lastRow) this.drawBlock(context, gx, gy, progress)
       })
+    }
+
+    // Before anything is written, a tiny hint; once writing begins, its
+    // letters come loose and drop away.
+    if (placeholder && !this.hintShedAt) {
+      this.hintShown = true
+      drawHint(context, hintLetters(context, geometry), null)
+    } else if (this.hintShown && !this.hintGone) {
+      this.hintShedAt ??= now
+      const falling = drawHint(context, hintLetters(context, geometry), now - this.hintShedAt)
+      if (!falling || reducedMotion) this.hintGone = true
     }
 
     // The thread comes out of the cell being worked, or rests at the

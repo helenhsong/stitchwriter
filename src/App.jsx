@@ -14,8 +14,6 @@ import {
   layoutText,
 } from './embroidery.js'
 
-const PLACEHOLDER = 'Type anything…'
-
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false)
 
@@ -121,7 +119,7 @@ function App() {
   )
   const placeholder = !text
   const layout = useMemo(
-    () => (fontReady ? layoutText(text || PLACEHOLDER, geometry) : null),
+    () => (fontReady ? layoutText(text, geometry) : null),
     [fontReady, geometry, text],
   )
   // The piece is sized to its writing: it starts with room for a couple
@@ -143,8 +141,8 @@ function App() {
     [geometry, growRows],
   )
   const caretCell = useMemo(
-    () => (layout ? caretPosition(layout, placeholder ? 0 : caret) : { col: 0, line: 0 }),
-    [caret, layout, placeholder],
+    () => (layout ? caretPosition(layout, caret) : { col: 0, line: 0 }),
+    [caret, layout],
   )
 
   // Schedule newly typed characters to be stitched one after another. Only
