@@ -44,8 +44,9 @@ export function createGeometry(viewportWidth, viewportHeight) {
   // (fallback punctuation, spacing, the caret) to match them.
   const em = 10
   const motif = compact ? 7 : 9
-  const arch = compact ? 5 : 7
-  const notch = compact ? 6 : 8
+  // Straight sides with stepped corners, like a filet tablecloth.
+  const arch = 0
+  const notch = compact ? 4 : 6
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
   const headerRows = Math.ceil(HEADER_HEIGHT / cell)
@@ -60,11 +61,10 @@ export function createGeometry(viewportWidth, viewportHeight) {
     top: headerRows + Math.round(rows * (compact ? 0.06 : 0.12)),
     bottom: Math.floor(viewportHeight / cell) - 1 - Math.round(rows * (compact ? 0.1 : 0.14)),
   }
-  // The border, by inset from the outline: a solid edge, a floral band of
-  // vines, flowers and leaves, then a solid inner line.
-  const band = compact
-    ? { start: 2, end: 12, line: 14 }
-    : { start: 2, end: 12, line: 14 }
+  // The border, by inset from the outline: a double rule (a solid edge two
+  // stitches wide, an open row and a single line), a floral band, then an
+  // inner line.
+  const band = { start: 5, end: 15, line: 17 }
   // The writing sits in the straight-sided middle of the piece, inside the
   // border and clear of the arches.
   const clear = band.line + 3
@@ -543,8 +543,8 @@ function makeBlockSprites(geometry, ratio) {
   return sprites
 }
 
-// The piece's outline, a cartouche: arched top and bottom edges, straight
-// sides, and concave notches cut out of each corner.
+// The piece's outline. archOffset lifts the top and bottom edges into
+// arches when geometry.arch is set; the corners are cut away in steps.
 function archOffset(geometry, x) {
   const { frame, arch } = geometry
   const middle = (frame.left + frame.right) / 2
@@ -553,6 +553,9 @@ function archOffset(geometry, x) {
   if (Math.abs(t) >= 1) return arch
   return arch * (1 - (Math.cos(Math.PI * t) + 1) / 2)
 }
+
+// The inner lines step their corners in by only a couple of stitches.
+const INNER_NOTCH = 2
 
 function outlineCorners(geometry) {
   const { frame, arch } = geometry
@@ -564,84 +567,41 @@ function outlineCorners(geometry) {
   ]
 }
 
-function insideOutline(geometry, x, y, inset) {
-  const { frame, notch } = geometry
+function insideOutline(geometry, x, y, inset, notch = geometry.notch) {
+  const { frame } = geometry
   if (x < frame.left + inset || x > frame.right - inset) return false
   const rise = archOffset(geometry, x)
   if (y < frame.top + rise + inset || y > frame.bottom - rise - inset) return false
+  // Each corner is stepped off one stitch at a time. Every inset moves the
+  // steps in by two so the rules stay a solid staircase. Inner lines pass
+  // a smaller notch for a shallower step.
   for (const [cx, cy] of outlineCorners(geometry)) {
-    if (Math.hypot(x - cx, y - cy) < notch + inset) return false
+    if (Math.abs(x - cx) + Math.abs(y - cy) < notch + inset * 2) return false
   }
   return true
 }
 
-// Border cells in viewport-grid coordinates: a solid outer edge and inner
-// line following the cartouche outline, with a dotted line of single
-// blocks just inside the edge, as on a filet tablecloth.
+// Border cells in viewport-grid coordinates: a double rule around the
+// outline, an inner line, and a dotted line of single blocks inside it.
 function frameCells(geometry) {
   const { frame, band } = geometry
   const cells = []
-  const ring = (x, y, from, to) =>
-    insideOutline(geometry, x, y, from) && !insideOutline(geometry, x, y, to + 1)
+  const ring = (x, y, from, to, notch) =>
+    insideOutline(geometry, x, y, from, notch) &&
+    !insideOutline(geometry, x, y, to + 1, notch)
   for (let y = frame.top; y <= frame.bottom; y += 1) {
     for (let x = frame.left; x <= frame.right; x += 1) {
-      const edge = ring(x, y, 0, 0)
-      const line = ring(x, y, band.line, band.line)
-      const dots = ring(x, y, band.line + 2, band.line + 2) && (x + y) % 2 === 0
+      const edge = ring(x, y, 0, 1) || ring(x, y, 3, 3)
+      const line = ring(x, y, band.line, band.line, INNER_NOTCH)
+      const dots = ring(x, y, band.line + 2, band.line + 2, INNER_NOTCH) && (x + y) % 2 === 0
       if (edge || line || dots) cells.push([x, y])
     }
   }
   return cells
 }
 
-// Rasterize a small drawing (in cell units) to filet cells, the same way
-// glyphs are charted.
-function chart(width, height, draw) {
-  const canvas = document.createElement('canvas')
-  canvas.width = width * SUBSAMPLE
-  canvas.height = height * SUBSAMPLE
-  const context = canvas.getContext('2d', { willReadFrequently: true })
-  context.scale(SUBSAMPLE, SUBSAMPLE)
-  context.fillStyle = '#fff'
-  context.strokeStyle = '#fff'
-  context.lineCap = 'round'
-  context.lineJoin = 'round'
-  draw(context)
-  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
-  const cells = []
-  for (let cy = 0; cy < height; cy += 1) {
-    for (let cx = 0; cx < width; cx += 1) {
-      let covered = 0
-      for (let sy = 0; sy < SUBSAMPLE; sy += 1) {
-        const offset = ((cy * SUBSAMPLE + sy) * canvas.width + cx * SUBSAMPLE) * 4
-        for (let sx = 0; sx < SUBSAMPLE; sx += 1) {
-          covered += pixels[offset + sx * 4 + 3] / 255
-        }
-      }
-      if (covered / (SUBSAMPLE * SUBSAMPLE) >= 0.45) cells.push([cx, cy])
-    }
-  }
-  return cells
-}
-
-// A small rosette: a ring of petals around a solid centre.
-function rosette(size) {
-  return chart(size, size, (context) => {
-    const c = size / 2
-    context.beginPath()
-    context.arc(c, c, size * 0.14, 0, Math.PI * 2)
-    context.fill()
-    for (let k = 0; k < 8; k += 1) {
-      const angle = (k / 8) * Math.PI * 2
-      context.beginPath()
-      context.arc(c + Math.cos(angle) * size * 0.33, c + Math.sin(angle) * size * 0.33, size * 0.09, 0, Math.PI * 2)
-      context.fill()
-    }
-  })
-}
-
 // Hand-charted filet motifs, in the style of a filet pattern sheet: a
-// rose, a star flower, a heart and a ribbon bow. X is a filled block.
+// corner rose, a heart and a ribbon bow. X is a filled block.
 function parseChart(rows) {
   const width = Math.max(...rows.map((row) => row.length))
   const cells = rows.flatMap((row, y) =>
@@ -650,18 +610,21 @@ function parseChart(rows) {
   return { width, height: rows.length, cells }
 }
 
-// The corner spray: an eight-petalled flower where the sides meet, with an
-// arm running along each side, leaf pairs on a stem ending in a tulip cup.
+// The corner spray: an open filet rose where the sides meet, with
+// an arm running along each side, leaf pairs on a stem ending in a tulip
+// cup.
 const CORNER_FLOWER = parseChart([
-  '..X...X..',
-  '.X.X.X.X.',
-  'X...X...X',
-  '.X.XXX.X.',
-  '..XX.XX..',
-  '.X.XXX.X.',
-  'X...X...X',
-  '.X.X.X.X.',
-  '..X...X..',
+  '...XX.XX...',
+  '..X..X..X..',
+  '.X.XX.XX.X.',
+  'X.X.....X.X',
+  'X.X..X..X.X',
+  '.X..XXX..X.',
+  'X.X..X..X.X',
+  'X.X.....X.X',
+  '.X.XX.XX.X.',
+  '..X..X..X..',
+  '...XX.XX...',
 ])
 
 // One arm of the corner spray, from its tip (row 0) back to the flower.
@@ -679,16 +642,6 @@ const CORNER_ARM = parseChart([
   '.X.X.X.',
   '..XXX..',
   '...X...',
-  '...X...',
-])
-
-const STAR_FLOWER = parseChart([
-  '...X...',
-  '..XXX..',
-  '.X.X.X.',
-  'XXX.XXX',
-  '.X.X.X.',
-  '..XXX..',
   '...X...',
 ])
 
@@ -750,7 +703,12 @@ function bandCells(geometry) {
   const add = (x, y) => {
     const key = `${x},${y}`
     if (seen.has(key)) return
-    if (!insideOutline(geometry, x, y, band.start) || insideOutline(geometry, x, y, band.end + 1)) return
+    if (
+      !insideOutline(geometry, x, y, band.start) ||
+      insideOutline(geometry, x, y, band.end + 1, INNER_NOTCH)
+    ) {
+      return
+    }
     seen.add(key)
     cells.push([x, y])
   }
@@ -764,7 +722,10 @@ function bandCells(geometry) {
   // its outer edge (v). The pattern grows outward from the inner rule.
   const offset = Math.max(0, Math.round((width - BORDER_REPEAT.height) / 2))
   const armStart = Math.ceil(CORNER_FLOWER.width / 2)
-  const corner = Math.round(centre) + armStart + CORNER_ARM.height + 2
+  // The flower sits on the stepped corner, as far along the diagonal as
+  // the steps cut in.
+  const diagonal = centre + geometry.notch / 2
+  const corner = Math.round(diagonal) + armStart + CORNER_ARM.height + 2
   const sides = [
     { from: frame.left + corner, to: frame.right - corner, at: (u, v) => [u, Math.round(frame.top + archOffset(geometry, u)) + band.start + v] },
     { from: frame.left + corner, to: frame.right - corner, at: (u, v) => [u, Math.round(frame.bottom - archOffset(geometry, u)) - band.start - v] },
@@ -791,13 +752,13 @@ function bandCells(geometry) {
   for (const [cx, cy] of outlineCorners(geometry)) {
     const sx = cx < (frame.left + frame.right) / 2 ? 1 : -1
     const sy = cy < (frame.top + frame.bottom) / 2 ? 1 : -1
-    const fx = cx + sx * centre
-    const fy = cy + sy * centre
+    const fx = cx + sx * diagonal
+    const fy = cy + sy * diagonal
     stamp(CORNER_FLOWER, fx, fy)
     const half = (CORNER_ARM.width - 1) / 2
     // While the piece is short, the arms up the sides would meet, so they
     // wait until there is room for both.
-    const sideRoom = (frame.bottom - frame.top) / 2 - arch - centre
+    const sideRoom = (frame.bottom - frame.top) / 2 - arch - diagonal
     const reach = armStart + CORNER_ARM.height
     const arms = sideRoom >= reach ? [[sx, 0], [0, sy]] : [[sx, 0]]
     for (const [dx, dy] of arms) {
@@ -813,30 +774,11 @@ function bandCells(geometry) {
 
 // Ornament cells in viewport-grid coordinates.
 function ornamentCells(geometry) {
-  const { frame, arch } = geometry
+  const { frame } = geometry
   const cells = []
-  const place = (shape, size, cx, cy) => {
-    const left = Math.round(cx - size / 2)
-    const top = Math.round(cy - size / 2)
-    for (const [x, y] of shape) cells.push([left + x, top + y])
-  }
 
-  // A motif sits in each corner notch, outside the border.
-  const [topLeft, topRight, bottomLeft, bottomRight] = outlineCorners(geometry)
-  const chartAt = (chart, cx, cy) => place(chart.cells, chart.width, cx, cy)
-  chartAt(STAR_FLOWER, topLeft[0] + 1, topLeft[1] - 1)
-  chartAt(STAR_FLOWER, topRight[0], topRight[1] - 1)
-  chartAt(STAR_FLOWER, bottomLeft[0] + 1, bottomLeft[1] + 1)
-  chartAt(STAR_FLOWER, bottomRight[0], bottomRight[1] + 1)
-
-  // Small motifs nested in the top and bottom arches, inside the border.
+  // A ribbon bow tied over the top edge.
   const middle = (frame.left + frame.right) / 2
-  const small = Math.max(5, arch - 2)
-  const below = geometry.band.line + 5
-  place(STAR_FLOWER.cells, STAR_FLOWER.width, middle, frame.top + below + STAR_FLOWER.height / 2)
-  place(rosette(small + 1), small + 1, middle, frame.bottom - below - (small + 1) / 2)
-
-  // A ribbon bow tied over the top arch.
   const ribbon = BOW
   const ribbonTop = frame.top - ribbon.height + 3
   for (const [x, y] of ribbon.cells) {
@@ -883,7 +825,7 @@ function paintPicots(context, geometry) {
   }
   const corners = outlineCorners(geometry)
   const clearOfNotches = (x, y) =>
-    corners.every(([cx, cy]) => Math.hypot(x - cx, y - cy) > notch + 1)
+    corners.every(([cx, cy]) => Math.abs(x - cx) + Math.abs(y - cy) > notch + 1)
 
   // Top and bottom edges follow the arches.
   for (let x = frame.left + 1; x <= frame.right; x += 2) {
@@ -898,16 +840,13 @@ function paintPicots(context, geometry) {
     if (clearOfNotches(frame.left, y)) loop(frame.left, y, Math.PI)
     if (clearOfNotches(frame.right + 1, y)) loop(frame.right + 1, y, 0)
   }
-  // Around each notch, pointing into it.
+  // Along each stepped corner, pointing out from it.
   for (const [cx, cy] of corners) {
-    const steps = Math.round((notch * Math.PI) / 2 / 2)
-    for (let k = 0; k <= steps; k += 1) {
-      const angle = (k / steps) * Math.PI * 2
-      const x = cx + Math.cos(angle) * notch
-      const y = cy + Math.sin(angle) * notch
-      if (insideOutline(geometry, Math.round(x + Math.cos(angle) * 1.5), Math.round(y + Math.sin(angle) * 1.5), 0)) {
-        loop(x, y, angle + Math.PI)
-      }
+    const sx = cx < (frame.left + frame.right) / 2 ? 1 : -1
+    const sy = cy < (frame.top + frame.bottom) / 2 ? 1 : -1
+    const angle = Math.atan2(-sy, -sx)
+    for (let k = 1; k < notch; k += 2) {
+      loop(cx + sx * k + (sx < 0 ? 1 : 0), cy + sy * (notch - k) + (sy < 0 ? 1 : 0), angle)
     }
   }
 
