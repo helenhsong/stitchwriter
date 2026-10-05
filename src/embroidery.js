@@ -2,6 +2,8 @@
 // and text is "stitched" by filling cells solid, the way filet crochet
 // pictures are worked.
 
+import { SCRIPT_ALPHABET } from './scriptAlphabet.js'
+
 export const STITCH_FONT = '"Playfair Display", Georgia, serif'
 export const STITCH_FONT_STYLE = 'italic 400'
 export const HEADER_HEIGHT = 66
@@ -38,7 +40,7 @@ export function createGeometry(viewportWidth, viewportHeight) {
   const compact = viewportWidth < 560
   // A fine mesh, like thread-weight filet lace: more, smaller cells.
   const cell = compact ? 2.5 : clamp(Math.round(viewportWidth / 480), 3, 4)
-  const em = compact ? 15 : 16
+  const em = 10
   const motif = compact ? 7 : 9
   const arch = compact ? 5 : 7
   const notch = compact ? 6 : 8
@@ -85,8 +87,8 @@ export function createGeometry(viewportWidth, viewportHeight) {
     frame,
     inner,
     lineWidth: Math.max(0.8, cell * 0.22),
-    lineHeight: Math.round(em * 1.3),
-    baselineOffset: em,
+    lineHeight: 15,
+    baselineOffset: 9,
     textLeft: inner.left + padX,
     textCols: Math.max(10, inner.right - inner.left + 1 - padX * 2),
     textTop: inner.top + padY,
@@ -114,6 +116,22 @@ export function getGlyph(character, em, face) {
   const cacheKey = `${em}:${face?.family ?? ''}:${character}`
   const cached = glyphCache.get(cacheKey)
   if (cached) return cached
+
+  // Letters of the writing come straight from the charted script alphabet;
+  // anything it lacks (digits, punctuation) is charted from the font.
+  const charted = !face && SCRIPT_ALPHABET[character]
+  if (charted) {
+    const cells = charted.rows.flatMap((row, y) => {
+      const worked = []
+      for (let x = 0; x < row.length; x += 1) {
+        if (row[x] === '#') worked.push([x, y - charted.baseline])
+      }
+      return y % 2 ? worked.reverse() : worked
+    })
+    const glyph = { cells, advance: charted.rows[0].length + 1 }
+    glyphCache.set(cacheKey, glyph)
+    return glyph
+  }
 
   const measure = getMeasureContext(em, face)
   const advance = measure.measureText(character).width / SUBSAMPLE
