@@ -59,8 +59,8 @@ export function createGeometry(viewportWidth, viewportHeight) {
   // The border, by inset from the outline: a solid edge, a floral band of
   // vines, flowers and leaves, then a solid inner line.
   const band = compact
-    ? { start: 2, end: 9, line: 11 }
-    : { start: 2, end: 10, line: 12 }
+    ? { start: 2, end: 14, line: 16 }
+    : { start: 2, end: 16, line: 18 }
   // The writing sits in the straight-sided middle of the piece, inside the
   // border and clear of the arches.
   const clear = band.line + 3
@@ -609,82 +609,6 @@ function chart(width, height, draw) {
   return cells
 }
 
-// Four-pointed sparkle with a ring of tiny stars, as in the moon piece.
-function sparkle(size) {
-  return chart(size, size, (context) => {
-    const c = size / 2
-    const long = size / 2
-    const waist = size * 0.09
-    context.beginPath()
-    context.moveTo(c, c - long)
-    context.lineTo(c + waist, c - waist)
-    context.lineTo(c + long, c)
-    context.lineTo(c + waist, c + waist)
-    context.lineTo(c, c + long)
-    context.lineTo(c - waist, c + waist)
-    context.lineTo(c - long, c)
-    context.lineTo(c - waist, c - waist)
-    context.closePath()
-    context.fill()
-    context.fillRect(c - size * 0.38, c - size * 0.38, 1, 1)
-    context.fillRect(c + size * 0.3, c - size * 0.38, 1, 1)
-    context.fillRect(c - size * 0.38, c + size * 0.3, 1, 1)
-    context.fillRect(c + size * 0.3, c + size * 0.3, 1, 1)
-  })
-}
-
-// Four-leaf clover on a curved stem.
-function clover(size) {
-  return chart(size, size, (context) => {
-    const c = size / 2
-    const leaf = size * 0.2
-    for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-      context.beginPath()
-      context.arc(c + dx * leaf * 0.95, c - size * 0.08 + dy * leaf * 0.95, leaf, 0, Math.PI * 2)
-      context.fill()
-    }
-    context.lineWidth = Math.max(1, size * 0.09)
-    context.beginPath()
-    context.moveTo(c, c)
-    context.quadraticCurveTo(c + size * 0.12, c + size * 0.3, c + size * 0.3, size - 0.6)
-    context.stroke()
-  })
-}
-
-// A ribbon bow, tied at the top of the piece.
-function bow(width) {
-  const height = Math.round(width * 0.45)
-  return {
-    width,
-    height,
-    cells: chart(width, height, (context) => {
-      const c = width / 2
-      context.lineWidth = Math.max(1.3, width * 0.055)
-      for (const side of [-1, 1]) {
-        context.save()
-        context.translate(c + side * width * 0.24, height * 0.36)
-        context.rotate(side * 0.38)
-        context.beginPath()
-        context.ellipse(0, 0, width * 0.2, height * 0.24, 0, 0, Math.PI * 2)
-        context.stroke()
-        context.restore()
-        context.beginPath()
-        context.moveTo(c, height * 0.45)
-        context.quadraticCurveTo(
-          c + side * width * 0.12,
-          height * 0.7,
-          c + side * width * 0.2,
-          height - 1,
-        )
-        context.stroke()
-      }
-      context.beginPath()
-      context.arc(c, height * 0.42, width * 0.05, 0, Math.PI * 2)
-      context.fill()
-    }),
-  }
-}
-
 // A small rosette: a ring of petals around a solid centre.
 function rosette(size) {
   return chart(size, size, (context) => {
@@ -701,110 +625,117 @@ function rosette(size) {
   })
 }
 
-// Four round petals around an open eye, charted cell by cell.
-const QUATREFOIL = [
+// Hand-charted filet motifs, in the style of a filet pattern sheet: roses,
+// buds, butterflies, hearts and a ribbon bow. X is a filled block.
+function parseChart(rows) {
+  const width = Math.max(...rows.map((row) => row.length))
+  const cells = rows.flatMap((row, y) =>
+    [...row].flatMap((mark, x) => (mark === 'X' ? [[x, y]] : [])),
+  )
+  return { width, height: rows.length, cells }
+}
+
+const ROSE = parseChart([
+  '...XXXXXXX...',
+  '.XXXXX.XXXXX.',
+  '.XXX.XXX.XXX.',
+  'XXX.XX.XX.XXX',
+  'XX.XX.X.XX.XX',
+  'XX.X.XXX.X.XX',
+  'XXX.X...X.XXX',
+  'XX.XXX.XXX.XX',
+  'XXX..XXX..XXX',
+  '.XXX.....XXX.',
+  '.XXXXX.XXXXX.',
+  '...XXXXXXX...',
+  '.....X.X.....',
+])
+
+const BUD = parseChart([
+  '...XXX...',
+  '..XX.XX..',
+  '.XX.X.XX.',
+  '.X.XXX.X.',
+  '.XX...XX.',
+  '..XXXXX..',
+  '....X....',
+  'XX..X..XX',
+  'XXX.X.XXX',
+  '.XXXXXXX.',
+  '....X....',
+])
+
+const BUTTERFLY = parseChart([
+  '.XXX.......XXX.',
+  'XX.XX.X.X.XX.XX',
+  'X...XX.X.XX...X',
+  'X.X..XXXXX..X.X',
+  'X....XXXXX....X',
+  '.XXXX.XXX.XXXX.',
+  '..XX..XXX..XX..',
+  '.XX.X.XXX.X.XX.',
+  '.X...X.X.X...X.',
+  '.XX.XX...XX.XX.',
+  '..XXX.....XXX..',
+])
+
+const SPRIG = parseChart([
+  '.XX......',
+  'XXXX..XX.',
+  'XXXXXXXXX',
+  '.XX.XXXX.',
+  '.....XX..',
+])
+
+const HEART = parseChart([
   '.XX.XX.',
   'XXXXXXX',
-  'XXX.XXX',
-  '.X...X.',
-  'XXX.XXX',
   'XXXXXXX',
-  '.XX.XX.',
-].flatMap((row, y) => [...row].flatMap((mark, x) => (mark === 'X' ? [[x, y]] : [])))
+  '.XXXXX.',
+  '..XXX..',
+  '...X...',
+])
 
-// A five-petalled flower with an open eye, as worked in filet roses.
-function flower(size) {
-  return chart(size, size, (context) => {
-    const c = size / 2
-    for (let k = 0; k < 5; k += 1) {
-      const angle = (k / 5) * Math.PI * 2 - Math.PI / 2
-      context.beginPath()
-      context.ellipse(
-        c + Math.cos(angle) * size * 0.25,
-        c + Math.sin(angle) * size * 0.25,
-        size * 0.22,
-        size * 0.17,
-        angle,
-        0,
-        Math.PI * 2,
-      )
-      context.fill()
-    }
-    context.beginPath()
-    context.arc(c, c, size * 0.24, 0, Math.PI * 2)
-    context.fill()
-    context.globalCompositeOperation = 'destination-out'
-    context.beginPath()
-    context.arc(c, c, size * 0.1, 0, Math.PI * 2)
-    context.fill()
-    // Hairline gaps between the petals.
-    context.lineWidth = Math.max(0.6, size * 0.06)
-    for (let k = 0; k < 5; k += 1) {
-      const angle = (k / 5) * Math.PI * 2 - Math.PI / 2 + Math.PI / 5
-      context.beginPath()
-      context.moveTo(c + Math.cos(angle) * size * 0.2, c + Math.sin(angle) * size * 0.2)
-      context.lineTo(c + Math.cos(angle) * size * 0.5, c + Math.sin(angle) * size * 0.5)
-      context.stroke()
-    }
-  })
-}
+const TINY_HEART = parseChart([
+  'XX.XX',
+  'XXXXX',
+  'XXXXX',
+  '.XXX.',
+  '..X..',
+])
 
-// Three round leaves on a short stalk that points right.
-function trefoil(size) {
-  return chart(size, size, (context) => {
-    const c = size / 2
-    const r = size * 0.2
-    for (const [dx, dy] of [[-0.22, 0], [0.05, -0.27], [0.05, 0.27]]) {
-      context.beginPath()
-      context.arc(c + dx * size, c + dy * size, r, 0, Math.PI * 2)
-      context.fill()
-    }
-    context.lineWidth = 1
-    context.beginPath()
-    context.moveTo(c, c)
-    context.lineTo(size, c)
-    context.stroke()
-  })
-}
+const BOW = parseChart([
+  '.XXXXX.............XXXXX.',
+  'XX...XXX.........XXX...XX',
+  'X..X...XX.......XX...X..X',
+  'X..XX...XX.....XX...XX..X',
+  'X...XX...XX...XX...XX...X',
+  'X....XX...XXXXX...XX....X',
+  'XX....XX..X...X..XX....XX',
+  '.XX....XXXX.X.XXXX....XX.',
+  '..XXX....XX...XX....XXX..',
+  '....XXXXXXXXXXXXXXXXX....',
+  '.........XXX.XXX.........',
+  '........XX.X.X.XX........',
+  '.......XX.XX.XX.XX.......',
+  '......XX.XX...XX.XX......',
+  '.....XX.XX.....XX.XX.....',
+  '....XXXXX.......XXXXX....',
+  '....X..X.........X..X....',
+])
 
-// A pointed leaf lying at `angle`, with an open midrib when large enough.
-function leaf(length, angle) {
-  const size = Math.ceil(length) + 1
-  return chart(size, size, (context) => {
-    const c = size / 2
-    context.translate(c, c)
-    context.rotate(angle)
-    const half = length / 2
-    const width = length * 0.3
-    context.beginPath()
-    context.moveTo(-half, 0)
-    context.quadraticCurveTo(0, -width * 1.6, half, 0)
-    context.quadraticCurveTo(0, width * 1.6, -half, 0)
-    context.fill()
-    if (length >= 7) {
-      context.globalCompositeOperation = 'destination-out'
-      context.lineWidth = 0.7
-      context.beginPath()
-      context.moveTo(-half * 0.5, 0)
-      context.lineTo(half * 0.55, 0)
-      context.stroke()
-    }
-  })
-}
+const mirror = (chart) => ({
+  ...chart,
+  cells: chart.cells.map(([x, y]) => [chart.width - 1 - x, y]),
+})
 
-// The floral band inside the border: a garland along each side, flowers
-// strung on a stem with pairs of leaves between them, all running toward
-// the middle of the side, and a larger flower spray at each corner.
-// Everything is clipped to the band.
+// The motif band inside the border: roses in the corners, and along each
+// side a procession of rosebuds and butterflies with leafy sprigs between
+// them. Everything is clipped to the band.
 function bandCells(geometry) {
   const { frame, band, notch, arch } = geometry
   const width = band.end - band.start + 1
   const centre = band.start + (width - 1) / 2
-  // Small bands use a charted quatrefoil, which reads better than a
-  // rasterized flower at only a few cells across.
-  const bloom = width - 2 < 9 ? 7 : width - 2
-  const blossom = bloom === 7 ? QUATREFOIL : flower(bloom)
-  const sprig = Math.max(5, Math.round(width * 0.75))
   const seen = new Set()
   const cells = []
   const add = (x, y) => {
@@ -814,81 +745,55 @@ function bandCells(geometry) {
     seen.add(key)
     cells.push([x, y])
   }
-  const stamp = (shape, size, x, y) => {
-    const left = Math.round(x - (size - 1) / 2)
-    const top = Math.round(y - (size - 1) / 2)
-    for (const [dx, dy] of shape) add(left + dx, top + dy)
+  const stamp = (chart, x, y) => {
+    const left = Math.round(x - (chart.width - 1) / 2)
+    const top = Math.round(y - (chart.height - 1) / 2)
+    for (const [dx, dy] of chart.cells) add(left + dx, top + dy)
   }
 
-  // Each side, in coordinates along it (u) and across the band (v, inward).
-  const corner = notch + band.end + 2
+  // Each side, in coordinates along it (u); vertical sides get sideways
+  // sprigs.
+  const corner = notch + band.end + 4
   const sides = [
-    { from: frame.left + corner, to: frame.right - corner, at: (u, v) => [u, frame.top + archOffset(geometry, u) + centre + v] },
-    { from: frame.left + corner, to: frame.right - corner, at: (u, v) => [u, frame.bottom - archOffset(geometry, u) - centre - v] },
-    { from: frame.top + arch + corner, to: frame.bottom - arch - corner, at: (u, v) => [frame.left + centre + v, u] },
-    { from: frame.top + arch + corner, to: frame.bottom - arch - corner, at: (u, v) => [frame.right - centre - v, u] },
+    { from: frame.left + corner, to: frame.right - corner, at: (u) => [u, frame.top + archOffset(geometry, u) + centre], upright: false },
+    { from: frame.left + corner, to: frame.right - corner, at: (u) => [u, frame.bottom - archOffset(geometry, u) - centre], upright: false },
+    { from: frame.top + arch + corner, to: frame.bottom - arch - corner, at: (u) => [frame.left + centre, u], upright: true },
+    { from: frame.top + arch + corner, to: frame.bottom - arch - corner, at: (u) => [frame.right - centre, u], upright: true },
   ]
-  const repeat = bloom + sprig * 2
+  const spacing = 26
   for (const side of sides) {
     const length = side.to - side.from
-    if (length < repeat) continue
-    // A whole number of repeats so each side ends tidily on a flower.
-    const count = Math.max(1, Math.round(length / repeat))
+    if (length < spacing) continue
+    const count = Math.max(1, Math.round(length / spacing))
     const step = length / count
     const middle = (side.from + side.to) / 2
-
-    // The stem bows gently between flowers, first one way, then the other.
-    const bend = width < 11 ? 0 : Math.max(1.5, width * 0.2)
-    const wave = (u) => bend * Math.sin(((u - side.from) / step) * Math.PI)
-    for (let u = side.from; u <= side.to; u += 0.25) {
-      const [x, y] = side.at(u, wave(u))
-      add(Math.round(x), Math.round(y))
-    }
     for (let k = 0; k <= count; k += 1) {
       const u = side.from + k * step
-      const [x, y] = side.at(u, 0)
-      stamp(blossom, bloom, x, y)
+      const [x, y] = side.at(u)
+      // Symmetric about the middle of each side.
+      const fromMiddle = Math.round(Math.abs(u - middle) / step)
+      stamp(fromMiddle % 2 === 0 ? BUTTERFLY : BUD, x, y)
       if (k === count) break
-      // A pair of leaves between flowers, pointing toward the middle.
-      for (const offset of [0.5]) {
-        const base = u + step * offset
-        const heading = base < middle ? 1 : -1
-        for (const outward of [-1, 1]) {
-          const du = Math.cos(0.85) * heading
-          const dv = Math.sin(0.85) * outward
-          const v = wave(base)
-          const [x0, y0] = side.at(base, v)
-          const [x1, y1] = side.at(base + du, v + dv)
-          const angle = Math.atan2(y1 - y0, x1 - x0)
-          const [lx, ly] = side.at(base + du * sprig * 0.45, v + dv * sprig * 0.45)
-          stamp(leaf(sprig, angle), sprig + 1, lx, ly)
-        }
-      }
+      const base = u + step / 2
+      const [sx, sy] = side.at(base)
+      // Leafy sprigs along the top and bottom, little hearts up the sides.
+      stamp(side.upright ? TINY_HEART : base < middle ? SPRIG : mirror(SPRIG), sx, sy)
     }
   }
 
-  // A flower spray tucked into the band at each corner notch.
-  const big = Math.max(9, bloom + 2)
-  const rose = flower(big)
+  // A rose tucked into the band at each corner notch.
   for (const [cx, cy] of outlineCorners(geometry)) {
     const sx = cx < (frame.left + frame.right) / 2 ? 1 : -1
     const sy = cy < (frame.top + frame.bottom) / 2 ? 1 : -1
     const reach = notch + centre
-    const fx = cx + sx * reach * 0.72
-    const fy = cy + sy * reach * 0.72
-    stamp(rose, big, fx, fy)
-    // Two leaves, one reaching along each side of the band.
-    for (const [dx, dy] of [[sx, 0], [0, sy]]) {
-      const shape = leaf(sprig + 1, Math.atan2(dy, dx))
-      stamp(shape, sprig + 2, fx + dx * big * 0.9, fy + dy * big * 0.9)
-    }
+    stamp(ROSE, cx + sx * reach * 0.72, cy + sy * reach * 0.72)
   }
   return cells
 }
 
 // Ornament cells in viewport-grid coordinates.
 function ornamentCells(geometry) {
-  const { frame, motif, arch } = geometry
+  const { frame, arch } = geometry
   const cells = []
   const place = (shape, size, cx, cy) => {
     const left = Math.round(cx - size / 2)
@@ -898,23 +803,22 @@ function ornamentCells(geometry) {
 
   // A motif sits in each corner notch, outside the border.
   const [topLeft, topRight, bottomLeft, bottomRight] = outlineCorners(geometry)
-  const star = sparkle(motif)
-  const leaf = clover(motif)
-  place(star, motif, topLeft[0] + 1, topLeft[1] - 1)
-  place(star, motif, topRight[0], topRight[1] - 1)
-  place(leaf, motif, bottomLeft[0] + 1, bottomLeft[1] + 1)
-  place(leaf.map(([x, y]) => [motif - 1 - x, y]), motif, bottomRight[0], bottomRight[1] + 1)
+  const chartAt = (chart, cx, cy) => place(chart.cells, chart.width, cx, cy)
+  chartAt(HEART, topLeft[0] + 1, topLeft[1] - 1)
+  chartAt(HEART, topRight[0], topRight[1] - 1)
+  chartAt(BUD, bottomLeft[0] + 1, bottomLeft[1] + 1)
+  chartAt(BUD, bottomRight[0], bottomRight[1] + 1)
 
   // Small motifs nested in the top and bottom arches, inside the border.
   const middle = (frame.left + frame.right) / 2
   const small = Math.max(5, arch - 2)
   const below = geometry.band.line + 5
-  place(sparkle(small), small, middle, frame.top + below + small / 2)
+  place(HEART.cells, HEART.width, middle, frame.top + below + HEART.height / 2)
   place(rosette(small + 1), small + 1, middle, frame.bottom - below - (small + 1) / 2)
 
   // A ribbon bow tied over the top arch.
-  const ribbon = bow(motif * 3 + 4)
-  const ribbonTop = frame.top - Math.round(ribbon.height * 0.5)
+  const ribbon = BOW
+  const ribbonTop = frame.top - ribbon.height + 3
   for (const [x, y] of ribbon.cells) {
     cells.push([Math.round(middle - ribbon.width / 2) + x, ribbonTop + y])
   }
@@ -1163,7 +1067,7 @@ function drawThread(context, origin, geometry, { stitch, progress, tension, swin
   shape.unshift({ ...origin })
   // Pulled taut, the thread pays out to its full length; let go, it
   // gathers back up into the short hanging end.
-  const points = trimStrand(shape, lerp(hang, 3200, ease * ease))
+  const points = trimStrand(shape, lerp(hang, 3200, ease ** 8))
 
   if (loop > 0.4) {
     context.save()
@@ -1305,8 +1209,6 @@ export class LaceRenderer {
     // Cut a hole in the lace under each header link, finished with a solid
     // edge, so the links stay legible on top of the fabric.
     const { context } = this.holesLayer
-    const endSize = 6
-    const endSprig = trefoil(endSize)
     for (const hole of labelHoles(geometry)) {
       context.save()
       context.beginPath()
@@ -1328,21 +1230,22 @@ export class LaceRenderer {
           if (outsideX !== outsideY) this.drawBlock(context, x, y)
         }
       }
-      for (let x = hole.left; x <= hole.right; x += 2) {
-        this.drawBlock(context, x, hole.top - 3)
+      // A heart at each end, and scalloped picots above and below.
+      const top = Math.round((hole.top + hole.bottom) / 2 - (TINY_HEART.height - 1) / 2)
+      for (const [x, y] of TINY_HEART.cells) {
+        this.drawBlock(context, hole.left - 2 - TINY_HEART.width + x, top + y)
+        this.drawBlock(context, hole.right + 3 + x, top + y)
       }
-      const top = Math.round((hole.top + hole.bottom) / 2 - (endSize - 1) / 2)
-      for (const [x, y] of endSprig) {
-        this.drawBlock(context, hole.left - 2 - endSize + x, top + y)
-        this.drawBlock(context, hole.right + 2 + (endSize - 1 - x), top + y)
-      }
-      const radius = cell * 1.4
+      const radius = cell * 1.2
       const picots = new Path2D()
-      for (let x = hole.left + 1; x <= hole.right; x += 3) {
+      for (let x = hole.left; x <= hole.right + 1; x += 3) {
         const px = x * cell + cell / 2
-        const py = (hole.bottom + 2) * cell + lineWidth / 2
-        picots.moveTo(px - radius, py)
-        picots.arc(px, py, radius, Math.PI, 0, true)
+        const below = (hole.bottom + 2) * cell + lineWidth / 2
+        const above = (hole.top - 1) * cell + lineWidth / 2
+        picots.moveTo(px - radius, below)
+        picots.arc(px, below, radius, Math.PI, 0, true)
+        picots.moveTo(px + radius, above)
+        picots.arc(px, above, radius, 0, Math.PI, true)
       }
       context.save()
       context.lineCap = 'round'
@@ -1516,7 +1419,7 @@ export class LaceRenderer {
     // Ease between the taut working thread and the slack resting one. The
     // thread relaxes more slowly than it tightens, like letting go of yarn.
     const tensionTarget = working && !reducedMotion ? 1 : 0
-    const settle = tensionTarget > (this.tension ?? 0) ? 90 : 420
+    const settle = tensionTarget > (this.tension ?? 0) ? 90 : 300
     this.tension = reducedMotion
       ? tensionTarget
       : (this.tension ?? 0) + (tensionTarget - (this.tension ?? 0)) * (1 - Math.exp(-elapsed / settle))
