@@ -43,49 +43,31 @@ export function createGeometry(viewportWidth, viewportHeight) {
   // Letters are charted at one stitch per cell; em sizes everything else
   // (fallback punctuation, spacing, the caret) to match them.
   const em = 10
-  const motif = compact ? 7 : 9
-  // A doily with scalloped edges: the depth of each scallop, the width of
-  // the floral band inside the edge, and how round the corners are.
-  const scallop = compact ? 3 : 4
-  const band = compact ? 8 : 10
-  const radius = compact ? 14 : 20
-  // A dome rising from the middle of the top edge, under the bow.
-  const dome = compact ? 7 : 10
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
   const headerRows = Math.ceil(HEADER_HEIGHT / cell)
-  // A small, dainty doily centred on a wide expanse of open lace.
+  // The seal: an embroidered title with flowers and fairy sparkles at the
+  // top of the page, worked at twice the writing's scale on wide screens.
+  const sealScale = compact ? 1 : 2
+  const centre = Math.floor(Math.floor(viewportWidth / cell) / 2)
+  const sealTop = headerRows + (compact ? 12 : 8)
+  const sealBottom = sealTop + 42 * sealScale + 4
+  // Below the seal, open lace for the writing.
   const across = compact
-    ? Math.floor(viewportWidth / cell) - 40
-    : Math.round(Math.min(viewportWidth * 0.5, 720) / cell)
-  const side = Math.floor((Math.floor(viewportWidth / cell) - across) / 2)
-  const frame = {
-    left: side,
-    right: side + across - 1,
-    // The bow and the caption sit above the piece's top, so leave room for
-    // them under the header.
-    top: headerRows + Math.round(rows * (compact ? 0.2 : 0.12)),
-    bottom: Math.floor(viewportHeight / cell) - 1 - Math.round(rows * (compact ? 0.1 : 0.14)),
-  }
-  // The writing sits inside the band's inner rules.
-  const clear = scallop + band + (compact ? 4 : 5)
+    ? Math.floor(viewportWidth / cell) - 16
+    : Math.round(Math.min(viewportWidth * 0.56, 760) / cell)
   const inner = {
-    left: frame.left + clear,
-    right: frame.right - clear,
-    top: frame.top + dome + clear,
-    bottom: frame.bottom - clear,
+    left: centre - Math.floor(across / 2),
+    right: centre - Math.floor(across / 2) + across - 1,
+    top: sealBottom + (compact ? 8 : 10),
+    bottom: Math.floor(viewportHeight / cell) - 1 - (compact ? 10 : 16),
   }
-  const padX = compact ? 4 : 6
-  const padY = compact ? 3 : 4
-
+  // The writing area doubles as the piece's extent, which grows with it.
+  const frame = { ...inner }
   return {
     cell,
     em,
-    motif,
-    scallop,
-    band,
-    radius,
-    dome,
+    seal: { centre, top: sealTop, bottom: sealBottom, scale: sealScale },
     cols,
     rows,
     frame,
@@ -93,10 +75,10 @@ export function createGeometry(viewportWidth, viewportHeight) {
     lineWidth: Math.max(0.8, cell * 0.22),
     lineHeight: Math.round(em * 1.4),
     baselineOffset: em,
-    textLeft: inner.left + padX,
-    textCols: Math.max(10, inner.right - inner.left + 1 - padX * 2),
-    textTop: inner.top + padY,
-    visibleTextRows: Math.max(1, inner.bottom - inner.top + 1 - padY * 2),
+    textLeft: inner.left,
+    textCols: Math.max(10, inner.right - inner.left + 1),
+    textTop: inner.top,
+    visibleTextRows: Math.max(1, inner.bottom - inner.top + 1),
   }
 }
 
@@ -545,8 +527,7 @@ function makeBlockSprites(geometry, ratio) {
   return sprites
 }
 
-// Hand-charted filet motifs, in the style of a filet pattern sheet, such as
-// the ribbon bow. X is a filled block.
+// Hand-charted motifs, as on a cross-stitch sampler. X is a stitch.
 function parseChart(rows) {
   const width = Math.max(...rows.map((row) => row.length))
   const cells = rows.flatMap((row, y) =>
@@ -555,139 +536,70 @@ function parseChart(rows) {
   return { width, height: rows.length, cells }
 }
 
-const BOW = parseChart([
-  '.XXXXX.............XXXXX.',
-  'XX...XXX.........XXX...XX',
-  'X..X...XX.......XX...X..X',
-  'X..XX...XX.....XX...XX..X',
-  'X...XX...XX...XX...XX...X',
-  'X....XX...XXXXX...XX....X',
-  'XX....XX..X...X..XX....XX',
-  '.XX....XXXX.X.XXXX....XX.',
-  '..XXX....XX...XX....XXX..',
-  '....XXXXXXXXXXXXXXXXX....',
-  '.........XXX.XXX.........',
-  '........XX.X.X.XX........',
-  '.......XX.XX.XX.XX.......',
-  '......XX.XX...XX.XX......',
-  '.....XX.XX.....XX.XX.....',
-  '....XXXXX.......XXXXX....',
-  '....X..X.........X..X....',
-])
-
-// A filet rose, after an old pattern sheet: a cupped head of petals
-// worked solid with open lines between them, and a smaller bud for narrow
-// bands.
-const ROSE = parseChart([
-  '....XXXXX....',
-  '..XXX...XXX..',
-  '.XX..XXX..XX.',
-  'XX..X...X..XX',
-  'X..X..X..X..X',
-  'X.X..XXX..X.X',
-  'X.X.XX.X.XX.X',
-  'X..X..XX..X.X',
-  'XX..XX..XX..X',
-  '.XX...XX...XX',
-  '..XXX....XXX.',
-  '....XXXXXX...',
-])
-
-const ROSEBUD = parseChart([
-  '..XXX..',
-  '.X...X.',
-  'X..X..X',
-  'X.XX.XX',
-  'X..X..X',
+const BLOSSOM = parseChart([
   '.XX.XX.',
+  'XXX.XXX',
+  'XX.X.XX',
   '..XXX..',
+  'XX.X.XX',
+  'XXX.XXX',
+  '.XX.XX.',
 ])
 
-const LEAF = parseChart([
-  '.XXX.',
-  'XX.XX',
-  'X.X.X',
-  'XX.XX',
-  '.XXX.',
+const FORGET_ME_NOT = parseChart([
+  '.X.X.',
+  'XXXXX',
+  '.X.X.',
+  'XXXXX',
+  '.X.X.',
 ])
 
-// Distance from a point to the piece's rounded outline (negative inside),
-// and how far around the outline its nearest point lies, measured from the
-// middle of the top edge within its quarter of the piece.
-function doilyFrame(geometry) {
-  const { frame, scallop, radius, dome } = geometry
-  // The body of the piece sits below the dome.
-  const cx = (frame.left + frame.right) / 2
-  const cy = (frame.top + dome + frame.bottom) / 2
-  const a = (frame.right - frame.left) / 2 - scallop
-  const b = (frame.bottom - frame.top - dome) / 2 - scallop
-  const r = Math.min(radius, a - 1, b - 1)
-  const w = a - r
-  const h = b - r
-  const quarter = w + (r * Math.PI) / 2 + h
-  // How far the dome lifts the top edge at a distance px from the middle.
-  const span = Math.min(w, a * 0.42)
-  const domeAt = (px) => (px >= span ? 0 : (dome * (Math.cos((Math.PI * px) / span) + 1)) / 2)
+const BUTTERFLY = parseChart([
+  '.X.........X.',
+  '..X.......X..',
+  'XX..X...X..XX',
+  'XXXX.X.X.XXXX',
+  'XXXXX.X.XXXXX',
+  '.XXXX.X.XXXX.',
+  '..XXX.X.XXX..',
+  '...XX.X.XX...',
+  '..XXX.X.XXX..',
+  '.XXXX...XXXX.',
+  '.XXX.....XXX.',
+  '..X.......X..',
+])
 
-  const measure = (x, y) => {
-    const px = Math.abs(x - cx)
-    const py = Math.abs(y - cy)
-    const qx = px - w
-    const qy = py - h
-    const top = y < cy ? b + domeAt(px) : b
-    let distance
-    let along
-    if (qx > 0 && qy > 0) {
-      distance = Math.hypot(qx, qy) - r
-      along = w + r * Math.atan2(qx, qy)
-    } else if (top - py < a - px) {
-      // Across the dome the edge rises steeply, so measure square to it.
-      const slope = y < cy && px < span
-        ? ((dome * Math.PI) / (2 * span)) * Math.sin((Math.PI * px) / span)
-        : 0
-      distance = (py - top) / Math.hypot(1, slope)
-      along = Math.min(px, w)
-    } else {
-      distance = px - a
-      along = w + (r * Math.PI) / 2 + (h - Math.min(py, h))
-    }
-    return { distance, along }
-  }
+const HEART = parseChart([
+  '.XX.XX.',
+  'XXXXXXX',
+  'XXXXXXX',
+  '.XXXXX.',
+  '..XXX..',
+  '...X...',
+])
 
-  // The point on the outline `along` its quarter, pushed `depth` inward,
-  // in each of the four quarters (mirrored so the piece is symmetric).
-  const pointsAt = (along, depth) => {
-    let x
-    let y
-    if (along <= w) {
-      x = along
-      y = b - depth
-    } else if (along <= w + (r * Math.PI) / 2) {
-      const angle = (along - w) / r
-      x = w + Math.sin(angle) * (r - depth)
-      y = h + Math.cos(angle) * (r - depth)
-    } else {
-      x = a - depth
-      y = h - (along - w - (r * Math.PI) / 2)
-    }
-    const lift = along <= w ? domeAt(x) : 0
-    return [
-      [cx + x, cy - y - lift],
-      [cx - x, cy - y - lift],
-      [cx + x, cy + y],
-      [cx - x, cy + y],
-    ]
-  }
+const BELLFLOWER = parseChart([
+  '...X...',
+  '..XXX..',
+  '.XXXXX.',
+  '.XXXXX.',
+  'X.X.X.X',
+])
 
-  return { measure, pointsAt, quarter }
-}
+const SPARKLE = parseChart([
+  '..X..',
+  '..X..',
+  'XX.XX',
+  '..X..',
+  '..X..',
+])
 
-// The doily's border: a scalloped edge worked solid with a row of eyelets
-// inside it, a band of roses on a winding leafy vine, and a solid rule and
-// a dotted rule closing the band.
-function doilyCells(geometry) {
-  const { frame, scallop, band } = geometry
-  const { measure, pointsAt, quarter } = doilyFrame(geometry)
+// The seal over the writing: "type anything" embroidered in the charted
+// script with a looping swash beneath it, ringed by blossoms, a
+// butterfly, bellflowers and trails of fairy dust.
+function sealCells(geometry) {
+  const { seal, em } = geometry
+  const { centre, top, scale } = seal
   const seen = new Set()
   const cells = []
   const mark = (x, y) => {
@@ -698,122 +610,98 @@ function doilyCells(geometry) {
     seen.add(key)
     cells.push([gx, gy])
   }
-
-  // Scallops: each quarter holds a whole number of them, so they meet
-  // evenly at the middle of every side.
-  const count = Math.max(2, Math.round(quarter / (scallop * 3.5)))
-  const scallopAt = (along) => scallop * Math.abs(Math.sin((Math.PI * along * count) / quarter))
-  const inBand = (x, y) => {
-    const { distance } = measure(x, y)
-    return distance < -2 && distance > -band + 1
+  // Motifs are worked at the seal's scale, each stitch a small block.
+  const block = (x, y) => {
+    for (let sy = 0; sy < scale; sy += 1) {
+      for (let sx = 0; sx < scale; sx += 1) mark(x + sx, y + sy)
+    }
   }
-
-  for (let y = frame.top - 1; y <= frame.bottom + 1; y += 1) {
-    for (let x = frame.left - 1; x <= frame.right + 1; x += 1) {
-      const { distance, along } = measure(x, y)
-      const edge = scallopAt(along)
-      // The scalloped edge, two stitches deep.
-      if (distance <= edge && distance > edge - 2) mark(x, y)
-      // Eyelets under each scallop, following its curve.
-      else if (distance <= edge - 3 && distance > edge - 4 && (x + y) % 2 === 0) {
-        if (edge > scallop * 0.35) mark(x, y)
-      }
-      // A solid rule along the inside of the band, and a dotted rule
-      // inside that.
-      else if (distance <= -band && distance > -band - 2) mark(x, y)
-      else if (distance <= -band - 3 && distance > -band - 4 && (x + y) % 2 === 0) mark(x, y)
-      // A plain rule just inside the scallops, where the band starts.
-      else if (distance <= -1 && distance > -2) mark(x, y)
+  const stamp = (chart, cx, cy) => {
+    const left = Math.round(cx - (chart.width * scale - 1) / 2)
+    const head = Math.round(cy - (chart.height * scale - 1) / 2)
+    for (const [x, y] of chart.cells) block(left + x * scale, head + y * scale)
+  }
+  // A curve worked as a line of stitches, or as dots spaced along it.
+  const trace = (point, length, gap = 0) => {
+    const steps = Math.max(8, Math.ceil(length * 3))
+    let last = null
+    for (let i = 0; i <= steps; i += 1) {
+      const [x, y] = point(i / steps)
+      if (gap && last && Math.hypot(x - last[0], y - last[1]) < gap) continue
+      mark(x, y)
+      last = [x, y]
     }
   }
 
-  // Roses spaced evenly around the band, one at each corner, with a leafy
-  // vine winding between them.
-  const middle = -band / 2 - 0.5
-  const rose = band >= 16 ? ROSE : ROSEBUD
-  const perQuarter = Math.max(2, Math.round(quarter / (rose.width * 2.6)))
-  const spacing = quarter / perQuarter
-  const roseAlong = Array.from({ length: perQuarter + 1 }, (_, i) => i * spacing)
-  const stamp = (chart, x, y, clip = true) => {
-    const left = Math.round(x - (chart.width - 1) / 2)
-    const top = Math.round(y - (chart.height - 1) / 2)
-    for (const [dx, dy] of chart.cells) {
-      if (!clip || inBand(left + dx, top + dy)) mark(left + dx, top + dy)
-    }
-  }
-  // A bud halfway between each pair of roses, when there's room.
-  const budAlong = rose === ROSE ? roseAlong.slice(1).map((at) => at - spacing / 2) : []
-  const clearOfRoses = (along) =>
-    roseAlong.every((at) => Math.abs(along - at) > rose.width * 0.62) &&
-    budAlong.every((at) => Math.abs(along - at) > ROSEBUD.width * 0.6)
-
-  // The vine: a thread waving from rose to bud to rose.
-  const sway = band >= 16 ? 2.5 : 1
-  const waves = budAlong.length ? 2 : 1
-  const waveAt = (along) => sway * Math.sin((Math.PI * 2 * waves * along) / spacing)
-  for (let along = 0; along <= quarter; along += 0.25) {
-    if (!clearOfRoses(along)) continue
-    for (const [x, y] of pointsAt(along, -middle + waveAt(along))) {
-      if (inBand(x, y)) mark(x, y)
-    }
-  }
-  // A leaf off each crest of the vine, on its outer side, where the band
-  // is wide enough to hold them.
-  for (let i = 0; i < (band >= 16 ? perQuarter : 0); i += 1) {
-    for (let k = 0.25; k < waves * 2; k += 0.5) {
-      const along = (i + k / (waves * 2) * 1) * spacing
-      const swing = Math.sign(waveAt(along))
-      const depth = -middle + swing * (sway + LEAF.height / 2 + 0.5)
-      for (const [x, y] of pointsAt(along, depth)) stamp(LEAF, x, y)
-    }
-  }
-  for (const along of budAlong) {
-    for (const [x, y] of pointsAt(along, -middle)) stamp(ROSEBUD, x, y)
-  }
-  for (const along of roseAlong) {
-    for (const [x, y] of pointsAt(along, -middle)) stamp(rose, x, y, false)
-  }
-  return cells
-}
-
-// Ornament cells in viewport-grid coordinates.
-function ornamentCells(geometry) {
-  const { frame } = geometry
-  const cells = []
-
-  // A ribbon bow tied over the top edge.
-  const middle = (frame.left + frame.right) / 2
-  const ribbon = BOW
-  const ribbonTop = frame.top - ribbon.height + geometry.scallop + 3
-  for (const [x, y] of ribbon.cells) {
-    cells.push([Math.round(middle - ribbon.width / 2) + x, ribbonTop + y])
-  }
-
-  // A small italic caption worked over the bow, its letters stepping up
-  // and down a gentle arc.
-  const glyphs = Array.from(CAPTION).map((character) =>
-    getGlyph(character, CAPTION_EM, CAPTION_FACE),
+  // The title, each charted stitch worked as a block of scale × scale.
+  const title = 'type anything'
+  const glyphs = Array.from(title).map((character) =>
+    /\s/.test(character) ? null : getGlyph(character, em),
   )
-  const total = glyphs.reduce((sum, glyph) => sum + glyph.advance, 0)
-  const baseline = ribbonTop - 1
-  let x = middle - total / 2
+  const space = 4
+  const width = glyphs.reduce((sum, glyph) => sum + (glyph ? glyph.advance : space), 0) * scale
+  const left = centre - width / 2
+  const right = left + width
+  const capTop = top + 14 * scale
+  const baseline = capTop + 7 * scale
+  let x = left
   for (const glyph of glyphs) {
-    const t = (x + glyph.advance / 2 - middle) / (total / 2)
-    const rise = Math.round(CAPTION_EM * 0.45 * (1 - t * t))
-    for (const [dx, dy] of glyph.cells) cells.push([Math.round(x) + dx, baseline - rise + dy])
-    x += glyph.advance
+    if (!glyph) {
+      x += space * scale
+      continue
+    }
+    for (const [dx, dy] of glyph.cells) block(x + dx * scale, baseline + dy * scale)
+    x += glyph.advance * scale
   }
+
+  // A swash under the title: it loops round at the left, sweeps under the
+  // words and curls up at the right.
+  const under = baseline + 6 * scale
+  const loop = 4 * scale
+  trace((t) => {
+    const angle = Math.PI * 0.5 + t * Math.PI * 1.75
+    return [left - loop * 1.1 + Math.cos(angle) * loop, under - loop + Math.sin(angle) * loop * 1.1]
+  }, loop * 8)
+  trace((t) => [
+    left - loop * 1.1 + t * (width + loop * 1.1),
+    under + Math.sin(Math.PI * t) * 2 * scale,
+  ], width)
+  trace((t) => {
+    const angle = Math.PI * 0.5 - t * Math.PI * 1.6
+    const radius = 2.5 * scale * (1 - t * 0.35)
+    return [right + Math.cos(angle) * radius, under - 2.5 * scale + Math.sin(angle) * radius]
+  }, 20 * scale)
+
+  // Fairy dust drifting up from either end of the title in dotted arcs,
+  // ending in sparkles.
+  const arc = (x0, y0, x1, y1, bulge) => (t) => [
+    x0 + (x1 - x0) * t,
+    y0 + (y1 - y0) * t - Math.sin(Math.PI * t) * bulge,
+  ]
+  const span = width / 2 + 16 * scale
+  trace(arc(left + 4 * scale, capTop - 2 * scale, centre - span, top + 4 * scale, 6 * scale), span, 2.6)
+  trace(arc(right - 4 * scale, capTop - 2 * scale, centre + span, top + 4 * scale, 6 * scale), span, 2.6)
+  stamp(SPARKLE, centre - span - 3, top + 2 * scale)
+  stamp(SPARKLE, centre + span + 3, top + 2 * scale)
+
+  // Blossoms along the top, a butterfly at the right, a heart and a
+  // bellflower sprig at the left, and small flowers and sparkles between.
+  stamp(BLOSSOM, centre, top + 5 * scale)
+  stamp(FORGET_ME_NOT, centre - width * 0.24, top + 8 * scale)
+  stamp(FORGET_ME_NOT, centre + width * 0.26, top + 7 * scale)
+  stamp(SPARKLE, centre - width * 0.4, top + 4 * scale)
+  stamp(SPARKLE, centre + width * 0.12, top + 3 * scale)
+  stamp(BUTTERFLY, right + 12 * scale, capTop + 2 * scale)
+  stamp(HEART, left - 13 * scale, capTop + 1 * scale)
+  stamp(BLOSSOM, right + 7 * scale, under + 4 * scale)
+  stamp(FORGET_ME_NOT, left - 15 * scale, under + 3 * scale)
+  // A bellflower sprig hanging from the swash.
+  const sprigX = centre + width * 0.2
+  trace((t) => [sprigX + Math.sin(t * Math.PI) * scale, under + 2 * scale + t * 6 * scale], 7 * scale)
+  stamp(BELLFLOWER, sprigX, under + 10 * scale)
+  stamp(SPARKLE, centre - width * 0.28, under + 6 * scale)
   return cells
 }
-
-const CAPTION = 'type anything you want'
-const CAPTION_EM = 12
-// The writing's high-contrast italic breaks up at this small size, so the
-// caption uses a rounder italic that still reads when charted to so few
-// cells.
-export const CAPTION_FONT = 'Lora, Georgia, serif'
-export const CAPTION_FONT_STYLE = 'italic 400'
-const CAPTION_FACE = { style: CAPTION_FONT_STYLE, family: CAPTION_FONT, thicken: 0.35 }
 
 // Soften a finished layer slightly: lace thread is fuzzy, never crisp.
 function soften(layer, amount) {
@@ -1235,8 +1123,7 @@ export class LaceRenderer {
     const ornamentKey = `${pieceGeometry.frame.bottom}`
     if (ornamentKey !== this.ornamentKey) {
       this.ornaments = [
-        ...doilyCells(pieceGeometry),
-        ...ornamentCells(pieceGeometry),
+        ...sealCells(pieceGeometry),
       ]
       this.ornamentKey = ornamentKey
     }

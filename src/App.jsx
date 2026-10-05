@@ -9,11 +9,8 @@ import {
 import { ProjectHeader } from '@helenhsong/ui'
 import '@helenhsong/ui/style.css'
 import '@fontsource/playfair-display/latin-400-italic.css'
-import '@fontsource/lora/latin-400-italic.css'
 import readme from '../README.md?raw'
 import {
-  CAPTION_FONT,
-  CAPTION_FONT_STYLE,
   HEADER_HEIGHT,
   LaceRenderer,
   STITCH_FONT,
@@ -72,10 +69,7 @@ function useFontReady() {
     let active = true
     const timeout = new Promise((resolve) => window.setTimeout(resolve, 1800))
     const fontLoad = document.fonts
-      ? Promise.all([
-          document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`),
-          document.fonts.load(`${CAPTION_FONT_STYLE} 72px ${CAPTION_FONT}`),
-        ])
+      ? document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`)
       : Promise.resolve()
 
     Promise.race([fontLoad, timeout]).then(() => {
