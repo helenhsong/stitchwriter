@@ -1,19 +1,21 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ProjectHeader } from '@helenhsong/ui'
 import '@helenhsong/ui/style.css'
-import '@fontsource/cormorant-garamond/latin-600.css'
+import '@fontsource/playfair-display/latin-400-italic.css'
+import '@fontsource/lora/latin-400-italic.css'
 import readme from '../README.md?raw'
 import {
+  CAPTION_FONT,
+  CAPTION_FONT_STYLE,
+  HEADER_HEIGHT,
+  LaceRenderer,
   STITCH_FONT,
-  createEmbroideryLayout,
-  drawEmbroidery,
-  rasterizeStitches,
+  STITCH_FONT_STYLE,
+  caretIndexAt,
+  caretPosition,
+  createGeometry,
+  layoutText,
+  stitchDuration,
 } from './embroidery.js'
 
 function useReducedMotion() {
@@ -30,16 +32,30 @@ function useReducedMotion() {
   return reduced
 }
 
-function useViewportHeight() {
-  const [height, setHeight] = useState(() => window.innerHeight)
+function useViewport() {
+  const [size, setSize] = useState(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }))
 
   useEffect(() => {
-    const update = () => setHeight(window.innerHeight)
+    // Repainting the whole mesh is costly, so wait for resizing to settle.
+    let timer = 0
+    const update = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(
+        () => setSize({ width: window.innerWidth, height: window.innerHeight }),
+        150,
+      )
+    }
     window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('resize', update)
+    }
   }, [])
 
-  return height
+  return size
 }
 
 function useFontReady() {
@@ -48,7 +64,12 @@ function useFontReady() {
   useEffect(() => {
     let active = true
     const timeout = new Promise((resolve) => window.setTimeout(resolve, 1800))
-    const fontLoad = document.fonts?.load(`600 72px ${STITCH_FONT}`) ?? Promise.resolve()
+    const fontLoad = document.fonts
+      ? Promise.all([
+          document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`),
+          document.fonts.load(`${CAPTION_FONT_STYLE} 72px ${CAPTION_FONT}`),
+        ])
+      : Promise.resolve()
 
     Promise.race([fontLoad, timeout]).then(() => {
       if (active) setReady(true)
@@ -62,197 +83,329 @@ function useFontReady() {
   return ready
 }
 
+// ProjectHeader marks <html data-ph-open> while its README panel is showing.
+function useReadmeOpen() {
+  const [open, setOpen] = useState(() =>
+    document.documentElement.hasAttribute('data-ph-open'),
+  )
+
+  useEffect(() => {
+    const root = document.documentElement
+    const update = () => setOpen(root.hasAttribute('data-ph-open'))
+    const observer = new MutationObserver(update)
+    observer.observe(root, { attributes: true, attributeFilter: ['data-ph-open'] })
+    update()
+    return () => observer.disconnect()
+  }, [])
+
+  return open
+}
+
+function codePointLength(value) {
+  return Array.from(value).length
+}
+
 function App() {
   const [text, setText] = useState('')
-  const [focused, setFocused] = useState(false)
-  const [clothWidth, setClothWidth] = useState(720)
+  const [caret, setCaret] = useState(0)
   const canvasRef = useRef(null)
-  const clothRef = useRef(null)
-  const motionRef = useRef(null)
+  const mainRef = useRef(null)
+  const rendererRef = useRef(null)
   const inputRef = useRef(null)
-  const caretRef = useRef(null)
-  const previousStitchesRef = useRef([])
-  const previousTextRef = useRef(null)
+  const birthsRef = useRef([])
+  const ghostsRef = useRef([])
+  const previousLayoutRef = useRef(null)
+  const previousTextRef = useRef('')
+  const sceneRef = useRef(null)
   const fontReady = useFontReady()
   const reducedMotion = useReducedMotion()
-  const viewportHeight = useViewportHeight()
+  const viewport = useViewport()
+  const readmeOpen = useReadmeOpen()
+
+  const geometry = useMemo(
+    () => createGeometry(viewport.width, viewport.height),
+    [viewport.width, viewport.height],
+  )
+  const placeholder = !text
+  const layout = useMemo(
+    () => (fontReady ? layoutText(text, geometry) : null),
+    [fontReady, geometry, text],
+  )
+  // The piece is sized to its writing: it starts one line tall and grows
+  // a row at a time as the writing gets longer.
+  const growRows = layout ? layout.height - geometry.visibleTextRows : 0
+  const overflowRows = Math.max(0, growRows)
+  const maxScroll = overflowRows * geometry.cell
+  const documentHeight = viewport.height + overflowRows * geometry.cell
+  const pieceGeometry = useMemo(
+    () => ({
+      ...geometry,
+      frame: { ...geometry.frame, bottom: geometry.frame.bottom + growRows },
+      inner: { ...geometry.inner, bottom: geometry.inner.bottom + growRows },
+    }),
+    [geometry, growRows],
+  )
+  const caretCell = useMemo(
+    () => (layout ? caretPosition(layout, caret) : { col: 0, line: 0 }),
+    [caret, layout],
+  )
+
+  // Schedule newly typed characters to be stitched one after another. Only
+  // the changed span is new: text before and after an insertion keeps its
+  // stitches.
+  useLayoutEffect(() => {
+    if (!layout) return
+    const previous = Array.from(previousTextRef.current)
+    const next = Array.from(text)
+    let prefix = 0
+    while (
+      prefix < previous.length &&
+      prefix < next.length &&
+      previous[prefix] === next[prefix]
+    ) {
+      prefix += 1
+    }
+    let suffix = 0
+    while (
+      suffix < previous.length - prefix &&
+      suffix < next.length - prefix &&
+      previous[previous.length - 1 - suffix] === next[next.length - 1 - suffix]
+    ) {
+      suffix += 1
+    }
+
+    const oldBirths = birthsRef.current
+    const births = oldBirths.slice(0, prefix)
+    const added = next.length - prefix - suffix
+    const now = performance.now()
+
+    // Deleted letters are unpicked where they stood, the last one typed
+    // coming out first.
+    const removed = previous.length - prefix - suffix
+    const oldLayout = previousLayoutRef.current
+    const ghosts = ghostsRef.current.filter((ghost) => now < ghost.end)
+    if (removed > 0 && oldLayout && !reducedMotion) {
+      const gap = removed > 6 ? Math.min(30, 500 / removed) : 70
+      let order = 0
+      for (let index = prefix + removed - 1; index >= prefix; index -= 1) {
+        const item = oldLayout.characters[index]
+        const birth = oldBirths[index]
+        if (!item?.glyph || (birth !== undefined && birth > now)) continue
+        const start = now + order * gap
+        const duration = Math.min(300, stitchDuration(item.glyph) * 0.6)
+        ghosts.push({ item, start, duration, end: start + duration })
+        order += 1
+      }
+    }
+    ghostsRef.current = ghosts
+    previousLayoutRef.current = layout
+    const bulk = added > 6
+    const spacing = bulk ? Math.min(60, 1100 / added) : 150
+    let lastBirth = oldBirths.reduce(
+      (latest, birth) => (birth === undefined ? latest : Math.max(latest, birth)),
+      -Infinity,
+    )
+
+    for (let index = prefix; index < prefix + added; index += 1) {
+      const character = next[index]
+      if (reducedMotion || /\s/.test(character)) {
+        births[index] = reducedMotion ? -Infinity : undefined
+        continue
+      }
+      // Pastes are stitched quickly; fast typing catches up gradually.
+      const backlog = Math.max(0, lastBirth - now)
+      const gap = bulk ? spacing : Math.max(20, spacing - backlog * 0.5)
+      const birth = Math.max(now, lastBirth + gap)
+      births[index] = birth
+      lastBirth = birth
+    }
+    births.push(...oldBirths.slice(previous.length - suffix))
+
+    birthsRef.current = births
+    previousTextRef.current = text
+  }, [layout, reducedMotion, text])
 
   useLayoutEffect(() => {
-    if (!fontReady || !clothRef.current) return undefined
-
-    const update = () => setClothWidth(clothRef.current.clientWidth)
-    const observer = new ResizeObserver(update)
-    update()
-    observer.observe(clothRef.current)
-    return () => observer.disconnect()
-  }, [fontReady])
-
-  const minimumHeight = Math.max(640, viewportHeight - 126)
-  const layout = useMemo(
-    () =>
-      createEmbroideryLayout(fontReady ? text : '', clothWidth, minimumHeight),
-    [clothWidth, fontReady, minimumHeight, text],
-  )
-  const stitches = useMemo(
-    () => (fontReady ? rasterizeStitches(layout) : []),
-    [fontReady, layout],
-  )
+    sceneRef.current = layout
+      ? {
+          layout,
+          maxScroll,
+          pieceGeometry,
+          births: birthsRef.current,
+          placeholder,
+          caret: caretCell,
+          caretIndex: caret,
+          reducedMotion,
+        }
+      : null
+  }, [caret, caretCell, layout, maxScroll, pieceGeometry, placeholder, reducedMotion])
 
   useEffect(() => {
-    if (!fontReady || !canvasRef.current) return undefined
+    if (!fontReady || readmeOpen || !canvasRef.current) return undefined
+    const renderer = new LaceRenderer(canvasRef.current)
+    renderer.resize(viewport.width, viewport.height, geometry)
+    rendererRef.current = renderer
+  }, [fontReady, geometry, readmeOpen, viewport.height, viewport.width])
 
-    let animationFrame
-    const textChanged = previousTextRef.current !== text
-    const previousKeys = textChanged
-      ? new Set(previousStitchesRef.current.map((stitch) => stitch.key))
-      : new Set(stitches.map((stitch) => stitch.key))
-    const startedAt = performance.now()
+  useEffect(() => {
+    if (!fontReady || readmeOpen) return undefined
+    let frame = 0
 
     const paint = (now) => {
-      const elapsed = reducedMotion ? 1000 : now - startedAt
-      drawEmbroidery(
-        canvasRef.current,
-        layout,
-        stitches,
-        previousKeys,
-        elapsed,
-        !text,
-      )
-      if (!reducedMotion && elapsed < 560) {
-        animationFrame = requestAnimationFrame(paint)
+      const scene = sceneRef.current
+      const renderer = rendererRef.current
+      if (scene && renderer) {
+        scene.births = birthsRef.current
+        scene.ghosts = ghostsRef.current
+        // Read the scroll position every frame so the lace moves with the
+        // page smoothly instead of in steps.
+        scene.scrollY = window.scrollY
+        renderer.draw(scene, now)
       }
+      if (!reducedMotion) frame = requestAnimationFrame(paint)
     }
 
-    animationFrame = requestAnimationFrame(paint)
-    previousStitchesRef.current = stitches
-    previousTextRef.current = text
-
-    return () => cancelAnimationFrame(animationFrame)
-  }, [fontReady, layout, reducedMotion, stitches, text])
-
-  useEffect(() => {
-    if (!fontReady || reducedMotion || !motionRef.current) return undefined
-
-    let lastScroll = window.scrollY
-    let velocity = 0
-    let animationFrame = 0
-
-    const settle = () => {
-      velocity *= 0.82
-      const scroll = window.scrollY
-      const tilt = Math.max(-1.2, Math.min(1.2, velocity * 0.055))
-      const sway = Math.sin(scroll * 0.008) * 2.2
-      motionRef.current?.style.setProperty('--cloth-tilt', `${tilt}deg`)
-      motionRef.current?.style.setProperty(
-        '--cloth-shift',
-        `${sway + Math.max(-5, Math.min(5, velocity * 0.11))}px`,
-      )
-      motionRef.current?.style.setProperty('--weave-y', `${scroll * -0.08}px`)
-
-      if (Math.abs(velocity) > 0.04) {
-        animationFrame = requestAnimationFrame(settle)
-      } else {
-        animationFrame = 0
-      }
-    }
-
+    frame = requestAnimationFrame(paint)
+    // With reduced motion there is no running loop, so repaint on scroll.
     const onScroll = () => {
-      const nextScroll = window.scrollY
-      velocity += nextScroll - lastScroll
-      lastScroll = nextScroll
-      if (!animationFrame) animationFrame = requestAnimationFrame(settle)
+      if (!reducedMotion) return
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(paint)
     }
-
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => {
+      cancelAnimationFrame(frame)
       window.removeEventListener('scroll', onScroll)
-      cancelAnimationFrame(animationFrame)
     }
-  }, [fontReady, reducedMotion])
+  }, [caret, fontReady, geometry, readmeOpen, reducedMotion, text])
 
+  // Ready to type as soon as the page opens, and any key typed while focus
+  // is elsewhere on the page goes to the lace.
   useEffect(() => {
-    if (!focused || !text || !caretRef.current) return undefined
+    if (!fontReady || readmeOpen) return undefined
+    const input = inputRef.current
+    input?.focus({ preventScroll: true })
 
-    const animationFrame = requestAnimationFrame(() => {
-      const bounds = caretRef.current.getBoundingClientRect()
-      if (bounds.bottom > window.innerHeight - 80) {
-        window.scrollBy({
-          top: bounds.bottom - window.innerHeight + 112,
-          behavior: reducedMotion ? 'auto' : 'smooth',
-        })
+    const onKeyDown = (event) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      if (document.activeElement === input) return
+      if (document.activeElement?.closest?.('a, button, input, select')) {
+        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Tab') return
       }
-    })
+      input?.focus({ preventScroll: true })
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [fontReady, readmeOpen])
 
-    return () => cancelAnimationFrame(animationFrame)
-  }, [focused, layout.height, reducedMotion, text])
+  // Keep the insertion point on screen as the piece grows. This only runs
+  // when the writing or the insertion point changes, never on scroll, so
+  // the page can be scrolled freely.
+  useEffect(() => {
+    if (!layout || placeholder) return
+    const scrollRows = window.scrollY / geometry.cell
+    const caretBottom =
+      geometry.textTop +
+      geometry.baselineOffset +
+      caretCell.line * geometry.lineHeight +
+      Math.round(geometry.em * 0.9)
+    const caretTop = caretBottom - geometry.lineHeight - Math.round(geometry.em * 0.4)
+    const headerRows = Math.ceil(HEADER_HEIGHT / geometry.cell)
+    if (caretBottom - scrollRows > geometry.rows - 3) {
+      // On the last line, show the whole bottom of the piece.
+      const lastLine = caretCell.line === layout.lines - 1
+      window.scrollTo({
+        top: lastLine
+          ? document.documentElement.scrollHeight
+          : (caretBottom - geometry.rows + 3) * geometry.cell,
+      })
+    } else if (caretTop - scrollRows < headerRows + 1) {
+      window.scrollTo({ top: Math.max(0, caretTop - headerRows - 1) * geometry.cell })
+    }
+  }, [caretCell.line, geometry, layout, placeholder])
 
-  const focusInput = () => inputRef.current?.focus({ preventScroll: true })
+  const syncCaret = (input) => {
+    const offset = input.selectionDirection === 'backward'
+      ? input.selectionStart
+      : input.selectionEnd
+    setCaret(codePointLength(input.value.slice(0, offset)))
+  }
+
+  // Map a pointer position to an insertion point in the writing, if any.
+  const hitTest = (clientX, clientY) => {
+    if (!layout || placeholder) return null
+    const scrollRows = Math.min(window.scrollY, maxScroll) / geometry.cell
+    const col = clientX / geometry.cell - geometry.textLeft
+    const row = clientY / geometry.cell - geometry.textTop + scrollRows
+    const x = clientX / geometry.cell
+    const y = clientY / geometry.cell + scrollRows
+    const { inner } = pieceGeometry
+    const insideBorder =
+      x >= inner.left && x <= inner.right + 1 && y >= inner.top && y <= inner.bottom + 1
+    return insideBorder ? caretIndexAt(layout, geometry, col, row) : null
+  }
+
+  const onPointerUp = (event) => {
+    const input = inputRef.current
+    if (!input) return
+    const index = hitTest(event.clientX, event.clientY)
+    input.focus({ preventScroll: true })
+    if (index === null) return
+    const offset = Array.from(text).slice(0, index).join('').length
+    input.setSelectionRange(offset, offset)
+    setCaret(index)
+  }
+
+  const onPointerMove = (event) => {
+    if (!mainRef.current) return
+    const overText = hitTest(event.clientX, event.clientY) !== null
+    mainRef.current.style.cursor = overText ? 'text' : 'default'
+  }
+
   return (
     <>
       <ProjectHeader readme={readme} />
-      <main className="project-page" aria-busy={!fontReady}>
-        <section className="stitch-stage" aria-label="Interactive embroidery canvas">
-          {!fontReady ? (
-            <div className="stitch-loader" role="status" aria-live="polite">
-              <span className="loader-thread" aria-hidden="true" />
-              <span>threading the needle…</span>
-            </div>
-          ) : (
-            <>
-              <div
-                ref={motionRef}
-                className={`cloth-motion${focused ? ' is-focused' : ''}`}
-              >
-                <div
-                  ref={clothRef}
-                  className="cloth-surface"
-                  onClick={focusInput}
-                  style={{ height: `${layout.height}px` }}
-                >
-                  <textarea
-                    ref={inputRef}
-                    className="stitch-input"
-                    value={text}
-                    onChange={(event) => setText(event.target.value)}
-                    onFocus={() => setFocused(true)}
-                    onBlur={() => setFocused(false)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Escape') event.currentTarget.blur()
-                    }}
-                    aria-label="Text to embroider"
-                    autoCapitalize="sentences"
-                    maxLength={12000}
-                    spellCheck
-                  />
-                  <canvas
-                    ref={canvasRef}
-                    className="embroidery-canvas"
-                    width={layout.width}
-                    height={layout.height}
-                    role="img"
-                    aria-label={
-                      text
-                        ? `Cross-stitched text: ${text.slice(0, 180)}`
-                        : 'An empty cross-stitch sampler'
-                    }
-                  />
-                  {text && focused && (
-                    <span
-                      ref={caretRef}
-                      className="stitch-caret"
-                      aria-hidden="true"
-                      style={{
-                        left: `${layout.caret.x}px`,
-                        top: `${layout.caret.y}px`,
-                        height: `${layout.caret.height}px`,
-                      }}
-                    />
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-        </section>
+      <main
+        ref={mainRef}
+        className="lace-page"
+        aria-busy={!fontReady}
+        style={{ height: `${documentHeight - HEADER_HEIGHT}px` }}
+        // Keep focus in the hidden input; clicks only move the insertion
+        // point when they land on the writing.
+        onMouseDown={(event) => event.preventDefault()}
+        onPointerUp={onPointerUp}
+        onPointerMove={onPointerMove}
+      >
+        <canvas
+          ref={canvasRef}
+          className="lace-canvas"
+          role="img"
+          aria-label={
+            text
+              ? `Filet-lace text: ${text.slice(0, 180)}`
+              : 'An empty piece of filet lace'
+          }
+        />
+        {!fontReady && (
+          <div className="lace-loader" role="status" aria-live="polite">
+            threading the needle…
+          </div>
+        )}
+        <textarea
+          ref={inputRef}
+          className="lace-input"
+          value={text}
+          onChange={(event) => {
+            setText(event.target.value)
+            syncCaret(event.target)
+          }}
+          onSelect={(event) => syncCaret(event.currentTarget)}
+          aria-label="Text to stitch"
+          autoCapitalize="sentences"
+          autoFocus
+          maxLength={12000}
+          spellCheck={false}
+        />
       </main>
     </>
   )
