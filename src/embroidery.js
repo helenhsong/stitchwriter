@@ -914,32 +914,28 @@ function drawThread(context, origin, geometry, { stitch, progress, tension, swin
   )
   taut.push({ x: hand.x + Math.cos(workAngle) * 2400, y: hand.y + Math.sin(workAngle) * 2400 })
 
-  // Slack, resting: it bows out of the lace and falls away under its own
-  // weight, swaying a little.
-  const restAngle = Math.PI * 0.2
-  const drop = Math.max(70, geometry.em * cell * 1.1)
-  const rest = {
-    x: origin.x + cell * 10 + swing * cell * 2,
-    y: origin.y + drop,
-  }
+  // Resting: a short loose end hangs straight down from the lace under its
+  // own weight, swaying a little.
+  const hang = Math.max(56, geometry.em * cell * 0.95)
+  const rest = { x: origin.x + cell * 1.5 + swing * cell * 2, y: origin.y + hang }
   const slack = bezierPoints(
     origin,
-    { x: origin.x + cell * 3, y: origin.y + drop * 0.35 },
-    {
-      x: rest.x - Math.cos(restAngle) * drop * 0.45 - swing * cell * 1.4,
-      y: rest.y - Math.sin(restAngle) * drop * 0.45,
-    },
+    { x: origin.x + cell * 2.5, y: origin.y + hang * 0.25 },
+    { x: rest.x - swing * cell * 1.4, y: origin.y + hang * 0.65 },
     rest,
     count,
   )
-  slack.push({ x: rest.x + Math.cos(restAngle) * 2400, y: rest.y + Math.sin(restAngle) * 2400 })
+  slack.push({ x: rest.x, y: rest.y + 2400 })
 
-  const points = slack.map((point, index) => ({
+  const shape = slack.map((point, index) => ({
     x: lerp(point.x, taut[index].x, ease),
     y: lerp(point.y, taut[index].y, ease),
   }))
   // Where the thread leaves the lace.
-  points.unshift({ ...origin })
+  shape.unshift({ ...origin })
+  // Pulled taut, the thread pays out to its full length; let go, it
+  // gathers back up into the short hanging end.
+  const points = trimStrand(shape, lerp(hang, 3200, ease * ease))
 
   if (loop > 0.4) {
     context.save()
@@ -955,6 +951,50 @@ function drawThread(context, origin, geometry, { stitch, progress, tension, swin
     context.restore()
   }
   drawStrand(context, points, width)
+  if (ease < 0.6) drawFray(context, points, width, 1 - ease / 0.6)
+}
+
+// Cut a run of points off after `length` pixels along it.
+function trimStrand(points, length) {
+  const trimmed = [points[0]]
+  let travelled = 0
+  for (let i = 1; i < points.length; i += 1) {
+    const a = points[i - 1]
+    const b = points[i]
+    const segment = Math.hypot(b.x - a.x, b.y - a.y)
+    if (travelled + segment >= length) {
+      const t = segment ? (length - travelled) / segment : 0
+      trimmed.push({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) })
+      return trimmed
+    }
+    travelled += segment
+    trimmed.push(b)
+  }
+  return trimmed
+}
+
+// The cut end of the loose thread, its plies splayed apart.
+function drawFray(context, points, width, amount) {
+  const tail = points.at(-1)
+  const before = points.at(-3) ?? points[0]
+  const angle = Math.atan2(tail.y - before.y, tail.x - before.x)
+  context.save()
+  context.globalAlpha = amount
+  context.lineCap = 'round'
+  context.strokeStyle = THREAD
+  context.lineWidth = Math.max(0.5, width * 0.28)
+  for (const spread of [-0.45, 0.05, 0.5]) {
+    context.beginPath()
+    context.moveTo(tail.x, tail.y)
+    context.quadraticCurveTo(
+      tail.x + Math.cos(angle + spread * 0.5) * width * 1.6,
+      tail.y + Math.sin(angle + spread * 0.5) * width * 1.6,
+      tail.x + Math.cos(angle + spread) * width * 2.6,
+      tail.y + Math.sin(angle + spread) * width * 2.6,
+    )
+    context.stroke()
+  }
+  context.restore()
 }
 
 export class LaceRenderer {
