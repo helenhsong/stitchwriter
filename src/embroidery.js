@@ -49,13 +49,19 @@ export function createGeometry(viewportWidth, viewportHeight) {
     top: headerRows + 2,
     bottom: Math.floor(viewportHeight / cell) - 1 - (compact ? 7 : 9),
   }
+  // The border, by inset from the outline: a solid edge, a floral band of
+  // vines, flowers and leaves, then a solid inner line.
+  const band = compact
+    ? { start: 3, end: 11, line: 13 }
+    : { start: 3, end: 15, line: 17 }
   // The writing sits in the straight-sided middle of the piece, inside the
-  // double border (3 solid + 2 open + 1 solid) and clear of the arches.
+  // border and clear of the arches.
+  const clear = band.line + 3
   const inner = {
-    left: frame.left + 6,
-    right: frame.right - 6,
-    top: frame.top + arch + 6,
-    bottom: frame.bottom - arch - 6,
+    left: frame.left + clear,
+    right: frame.right - clear,
+    top: frame.top + arch + clear,
+    bottom: frame.bottom - arch - clear,
   }
   const padX = compact ? 5 : 10
   const padY = compact ? 3 : 4
@@ -66,6 +72,7 @@ export function createGeometry(viewportWidth, viewportHeight) {
     motif,
     arch,
     notch,
+    band,
     cols,
     rows,
     frame,
@@ -544,16 +551,20 @@ function insideOutline(geometry, x, y, inset) {
   return true
 }
 
-// Border cells in viewport-grid coordinates: a heavy outer band and a fine
-// inner line, both following the cartouche outline.
+// Border cells in viewport-grid coordinates: a solid outer edge and inner
+// line following the cartouche outline, with a dotted line of single
+// blocks just inside the edge, as on a filet tablecloth.
 function frameCells(geometry) {
-  const { frame } = geometry
+  const { frame, band } = geometry
   const cells = []
+  const ring = (x, y, from, to) =>
+    insideOutline(geometry, x, y, from) && !insideOutline(geometry, x, y, to + 1)
   for (let y = frame.top; y <= frame.bottom; y += 1) {
     for (let x = frame.left; x <= frame.right; x += 1) {
-      const outer = insideOutline(geometry, x, y, 0) && !insideOutline(geometry, x, y, 3)
-      const inner = insideOutline(geometry, x, y, 5) && !insideOutline(geometry, x, y, 6)
-      if (outer || inner) cells.push([x, y])
+      const edge = ring(x, y, 0, 1)
+      const line = ring(x, y, band.line, band.line + 1)
+      const dots = ring(x, y, band.line + 3, band.line + 3) && (x + y) % 3 === 0
+      if (edge || line || dots) cells.push([x, y])
     }
   }
   return cells
@@ -681,6 +692,178 @@ function rosette(size) {
   })
 }
 
+// A five-petalled flower with an open eye, as worked in filet roses.
+function flower(size) {
+  return chart(size, size, (context) => {
+    const c = size / 2
+    for (let k = 0; k < 5; k += 1) {
+      const angle = (k / 5) * Math.PI * 2 - Math.PI / 2
+      context.beginPath()
+      context.ellipse(
+        c + Math.cos(angle) * size * 0.25,
+        c + Math.sin(angle) * size * 0.25,
+        size * 0.22,
+        size * 0.17,
+        angle,
+        0,
+        Math.PI * 2,
+      )
+      context.fill()
+    }
+    context.beginPath()
+    context.arc(c, c, size * 0.24, 0, Math.PI * 2)
+    context.fill()
+    context.globalCompositeOperation = 'destination-out'
+    context.beginPath()
+    context.arc(c, c, size * 0.1, 0, Math.PI * 2)
+    context.fill()
+    // Hairline gaps between the petals.
+    context.lineWidth = Math.max(0.6, size * 0.06)
+    for (let k = 0; k < 5; k += 1) {
+      const angle = (k / 5) * Math.PI * 2 - Math.PI / 2 + Math.PI / 5
+      context.beginPath()
+      context.moveTo(c + Math.cos(angle) * size * 0.2, c + Math.sin(angle) * size * 0.2)
+      context.lineTo(c + Math.cos(angle) * size * 0.5, c + Math.sin(angle) * size * 0.5)
+      context.stroke()
+    }
+  })
+}
+
+// Three round leaves on a short stalk that points right.
+function trefoil(size) {
+  return chart(size, size, (context) => {
+    const c = size / 2
+    const r = size * 0.2
+    for (const [dx, dy] of [[-0.22, 0], [0.05, -0.27], [0.05, 0.27]]) {
+      context.beginPath()
+      context.arc(c + dx * size, c + dy * size, r, 0, Math.PI * 2)
+      context.fill()
+    }
+    context.lineWidth = 1
+    context.beginPath()
+    context.moveTo(c, c)
+    context.lineTo(size, c)
+    context.stroke()
+  })
+}
+
+// A pointed leaf lying at `angle`, with an open midrib when large enough.
+function leaf(length, angle) {
+  const size = Math.ceil(length) + 1
+  return chart(size, size, (context) => {
+    const c = size / 2
+    context.translate(c, c)
+    context.rotate(angle)
+    const half = length / 2
+    const width = length * 0.3
+    context.beginPath()
+    context.moveTo(-half, 0)
+    context.quadraticCurveTo(0, -width * 1.6, half, 0)
+    context.quadraticCurveTo(0, width * 1.6, -half, 0)
+    context.fill()
+    if (length >= 7) {
+      context.globalCompositeOperation = 'destination-out'
+      context.lineWidth = 0.7
+      context.beginPath()
+      context.moveTo(-half * 0.5, 0)
+      context.lineTo(half * 0.55, 0)
+      context.stroke()
+    }
+  })
+}
+
+// The floral band inside the border: a garland along each side, flowers
+// strung on a stem with pairs of leaves between them, all running toward
+// the middle of the side, and a larger flower spray at each corner.
+// Everything is clipped to the band.
+function bandCells(geometry) {
+  const { frame, band, notch, arch } = geometry
+  const width = band.end - band.start + 1
+  const centre = band.start + (width - 1) / 2
+  const bloom = width - 2
+  const blossom = flower(bloom)
+  const sprig = Math.max(5, Math.round(width * 0.75))
+  const seen = new Set()
+  const cells = []
+  const add = (x, y) => {
+    const key = `${x},${y}`
+    if (seen.has(key)) return
+    if (!insideOutline(geometry, x, y, band.start) || insideOutline(geometry, x, y, band.end + 1)) return
+    seen.add(key)
+    cells.push([x, y])
+  }
+  const stamp = (shape, size, x, y) => {
+    const left = Math.round(x - (size - 1) / 2)
+    const top = Math.round(y - (size - 1) / 2)
+    for (const [dx, dy] of shape) add(left + dx, top + dy)
+  }
+
+  // Each side, in coordinates along it (u) and across the band (v, inward).
+  const corner = notch + band.end + 2
+  const sides = [
+    { from: frame.left + corner, to: frame.right - corner, at: (u, v) => [u, frame.top + archOffset(geometry, u) + centre + v] },
+    { from: frame.left + corner, to: frame.right - corner, at: (u, v) => [u, frame.bottom - archOffset(geometry, u) - centre - v] },
+    { from: frame.top + arch + corner, to: frame.bottom - arch - corner, at: (u, v) => [frame.left + centre + v, u] },
+    { from: frame.top + arch + corner, to: frame.bottom - arch - corner, at: (u, v) => [frame.right - centre - v, u] },
+  ]
+  const repeat = bloom + sprig * 2
+  for (const side of sides) {
+    const length = side.to - side.from
+    if (length < repeat) continue
+    // A whole number of repeats so each side ends tidily on a flower.
+    const count = Math.max(1, Math.round(length / repeat))
+    const step = length / count
+    const middle = (side.from + side.to) / 2
+
+    // The stem bows gently between flowers, first one way, then the other.
+    const bend = Math.max(1.5, width * 0.2)
+    const wave = (u) => bend * Math.sin(((u - side.from) / step) * Math.PI)
+    for (let u = side.from; u <= side.to; u += 0.25) {
+      const [x, y] = side.at(u, wave(u))
+      add(Math.round(x), Math.round(y))
+    }
+    for (let k = 0; k <= count; k += 1) {
+      const u = side.from + k * step
+      const [x, y] = side.at(u, 0)
+      stamp(blossom, bloom, x, y)
+      if (k === count) break
+      // A pair of leaves between flowers, pointing toward the middle.
+      for (const offset of [0.5]) {
+        const base = u + step * offset
+        const heading = base < middle ? 1 : -1
+        for (const outward of [-1, 1]) {
+          const du = Math.cos(0.85) * heading
+          const dv = Math.sin(0.85) * outward
+          const v = wave(base)
+          const [x0, y0] = side.at(base, v)
+          const [x1, y1] = side.at(base + du, v + dv)
+          const angle = Math.atan2(y1 - y0, x1 - x0)
+          const [lx, ly] = side.at(base + du * sprig * 0.45, v + dv * sprig * 0.45)
+          stamp(leaf(sprig, angle), sprig + 1, lx, ly)
+        }
+      }
+    }
+  }
+
+  // A flower spray tucked into the band at each corner notch.
+  const big = bloom + 2
+  const rose = flower(big)
+  for (const [cx, cy] of outlineCorners(geometry)) {
+    const sx = cx < (frame.left + frame.right) / 2 ? 1 : -1
+    const sy = cy < (frame.top + frame.bottom) / 2 ? 1 : -1
+    const reach = notch + centre
+    const fx = cx + sx * reach * 0.72
+    const fy = cy + sy * reach * 0.72
+    stamp(rose, big, fx, fy)
+    // Two leaves, one reaching along each side of the band.
+    for (const [dx, dy] of [[sx, 0], [0, sy]]) {
+      const shape = leaf(sprig + 1, Math.atan2(dy, dx))
+      stamp(shape, sprig + 2, fx + dx * big * 0.9, fy + dy * big * 0.9)
+    }
+  }
+  return cells
+}
+
 // Ornament cells in viewport-grid coordinates.
 function ornamentCells(geometry) {
   const { frame, motif, arch } = geometry
@@ -700,11 +883,12 @@ function ornamentCells(geometry) {
   place(leaf, motif, bottomLeft[0] + 1, bottomLeft[1] + 1)
   place(leaf.map(([x, y]) => [motif - 1 - x, y]), motif, bottomRight[0], bottomRight[1] + 1)
 
-  // Small motifs nested in the top and bottom arches.
+  // Small motifs nested in the top and bottom arches, inside the border.
   const middle = (frame.left + frame.right) / 2
   const small = Math.max(5, arch - 2)
-  place(sparkle(small), small, middle, frame.top + 6 + small / 2)
-  place(rosette(small + 1), small + 1, middle, frame.bottom - 6 - (small + 1) / 2)
+  const below = geometry.band.line + 5
+  place(sparkle(small), small, middle, frame.top + below + small / 2)
+  place(rosette(small + 1), small + 1, middle, frame.bottom - below - (small + 1) / 2)
 
   // A ribbon bow tied over the top arch.
   const ribbon = bow(motif * 3 + 4)
@@ -1077,6 +1261,8 @@ export class LaceRenderer {
     // Cut a hole in the lace under each header link, finished with a solid
     // edge, so the links stay legible on top of the fabric.
     const { context } = this.holesLayer
+    const endSize = 6
+    const endSprig = trefoil(endSize)
     for (const hole of labelHoles(geometry)) {
       context.save()
       context.beginPath()
@@ -1089,6 +1275,8 @@ export class LaceRenderer {
       context.clip()
       paintVelvet(context, this.width, this.height)
       context.restore()
+      // A little lace label: a solid edge, a dotted rule above and below,
+      // a flower at each end, and picots hanging from the bottom.
       for (let y = hole.top - 1; y <= hole.bottom + 1; y += 1) {
         for (let x = hole.left - 1; x <= hole.right + 1; x += 1) {
           const outsideY = y < hole.top || y > hole.bottom
@@ -1096,6 +1284,31 @@ export class LaceRenderer {
           if (outsideX !== outsideY) this.drawBlock(context, x, y)
         }
       }
+      for (let x = hole.left; x <= hole.right; x += 2) {
+        this.drawBlock(context, x, hole.top - 3)
+      }
+      const top = Math.round((hole.top + hole.bottom) / 2 - (endSize - 1) / 2)
+      for (const [x, y] of endSprig) {
+        this.drawBlock(context, hole.left - 2 - endSize + x, top + y)
+        this.drawBlock(context, hole.right + 2 + (endSize - 1 - x), top + y)
+      }
+      const radius = cell * 1.4
+      const picots = new Path2D()
+      for (let x = hole.left + 1; x <= hole.right; x += 3) {
+        const px = x * cell + cell / 2
+        const py = (hole.bottom + 2) * cell + lineWidth / 2
+        picots.moveTo(px - radius, py)
+        picots.arc(px, py, radius, Math.PI, 0, true)
+      }
+      context.save()
+      context.lineCap = 'round'
+      context.strokeStyle = THREAD_SHADE
+      context.lineWidth = lineWidth * 1.5
+      context.stroke(picots)
+      context.strokeStyle = THREAD
+      context.lineWidth = lineWidth
+      context.stroke(picots)
+      context.restore()
     }
     soften(this.holesLayer, this.ratio * 0.45)
   }
@@ -1119,7 +1332,11 @@ export class LaceRenderer {
     // document space and scroll with it.
     const ornamentKey = `${pieceGeometry.frame.bottom}`
     if (ornamentKey !== this.ornamentKey) {
-      this.ornaments = [...frameCells(pieceGeometry), ...ornamentCells(pieceGeometry)]
+      this.ornaments = [
+        ...frameCells(pieceGeometry),
+        ...bandCells(pieceGeometry),
+        ...ornamentCells(pieceGeometry),
+      ]
       this.ornamentKey = ornamentKey
     }
     for (const [x, y] of this.ornaments) {
