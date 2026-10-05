@@ -128,13 +128,9 @@ function App() {
     () => (fontReady ? layoutText(text, geometry) : null),
     [fontReady, geometry, text],
   )
-  // The piece is sized to its writing: it starts with room for a couple
-  // of lines and grows a row at a time as the writing gets longer.
-  const minimumRows =
-    geometry.baselineOffset + geometry.lineHeight + Math.round(geometry.em * 0.5)
-  const growRows = layout
-    ? Math.max(minimumRows, layout.height) - geometry.visibleTextRows
-    : 0
+  // The piece is sized to its writing: it starts one line tall and grows
+  // a row at a time as the writing gets longer.
+  const growRows = layout ? layout.height - geometry.visibleTextRows : 0
   const overflowRows = Math.max(0, growRows)
   const maxScroll = overflowRows * geometry.cell
   const documentHeight = viewport.height + overflowRows * geometry.cell

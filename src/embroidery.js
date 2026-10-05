@@ -780,7 +780,12 @@ function bandCells(geometry) {
     const fy = cy + sy * centre
     stamp(CORNER_FLOWER, fx, fy)
     const half = (CORNER_ARM.width - 1) / 2
-    for (const [dx, dy] of [[sx, 0], [0, sy]]) {
+    // While the piece is short, the arms up the sides would meet, so they
+    // wait until there is room for both.
+    const sideRoom = (frame.bottom - frame.top) / 2 - arch - centre
+    const reach = armStart + CORNER_ARM.height
+    const arms = sideRoom >= reach ? [[sx, 0], [0, sy]] : [[sx, 0]]
+    for (const [dx, dy] of arms) {
       for (const [ax, ar] of CORNER_ARM.cells) {
         const along = armStart + (CORNER_ARM.height - 1 - ar)
         const across = ax - half
