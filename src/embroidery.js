@@ -1223,7 +1223,7 @@ function hintCells(geometry) {
   return { cells, left: Math.round((inner.left + inner.right + 1) / 2 - width / 2), width, baseline }
 }
 
-const HINT_PULL_MS = 1100
+const HINT_PULL_MS = 1500
 const HINT_TAIL_MS = 450
 
 // Draw the hint as fine white thread worked over the mesh. Once writing
@@ -1244,51 +1244,39 @@ function drawHint(renderer, context, geometry, elapsed) {
   context.save()
   for (const [gx, gy] of hint.cells) {
     if (gx < pullCol) continue
-    // The stitches just ahead of the pull are tugged loose.
-    const lift = pulling ? clamp(1 - (gx - pullCol) / 4, 0, 1) : 0
-    renderer.drawBlock(context, gx, gy - lift * 0.6, 1 - lift * 0.5)
+    // The stitch at the pull point loosens as it comes undone.
+    const loosen = pulling ? clamp(1 - (gx - pullCol) / 2, 0, 1) : 0
+    renderer.drawBlock(context, gx, gy, 1 - loosen * 0.4)
   }
-  const pullX = pullCol * cell
 
   if (pulling) {
-    // The loose strand, crimped from having been stitched, straightening
-    // toward the hand that pulls it.
-    const hand = { x: pullX + 90 + 70 * progress, y: y - 170 - 50 * progress }
-    const slip = clamp((t - HINT_PULL_MS) / HINT_TAIL_MS, 0, 1) ** 2
-    const start = {
-      x: lerp(pullX, hand.x, slip),
-      y: lerp(y - 4, hand.y, slip),
-    }
-    const far = { x: hand.x + 400, y: hand.y - 900 }
-    const dx = hand.x - start.x
-    const dy = hand.y - start.y
-    const length = Math.hypot(dx, dy) || 1
-    const nx = -dy / length
-    const ny = dx / length
-    const points = []
-    const count = 48
-    for (let k = 0; k <= count; k += 1) {
-      const u = k / count
-      const crimp = Math.sin(k * 1.9 + t / 35) * 2.4 * (1 - u) ** 1.5
-      points.push({
-        x: start.x + dx * u + nx * crimp,
-        y: start.y + dy * u + ny * crimp + Math.sin(u * Math.PI) * 18,
-      })
-    }
-    points.push(far)
-    const trace = () => {
+    // A short, crimped loose end trails from where the stitches are coming
+    // undone, then slips out through the mesh.
+    const slip = clamp((t - HINT_PULL_MS) / HINT_TAIL_MS, 0, 1)
+    const start = { x: pullCol * cell, y: y - 2 }
+    const length = (22 + 10 * progress) * (1 - slip)
+    if (length > 1) {
+      const points = []
+      const count = 16
+      for (let k = 0; k <= count; k += 1) {
+        const u = k / count
+        points.push({
+          x: start.x - u * length * 0.85,
+          y: start.y + u * length * 0.5 + Math.sin(k * 1.7) * 1.1 * u,
+        })
+      }
+      context.lineCap = 'round'
+      context.lineJoin = 'round'
       context.beginPath()
       context.moveTo(points[0].x, points[0].y)
       for (const point of points.slice(1)) context.lineTo(point.x, point.y)
+      context.strokeStyle = 'rgba(0, 0, 0, 0.45)'
+      context.lineWidth = 2.2
+      context.stroke()
+      context.strokeStyle = THREAD
+      context.lineWidth = 1.1
+      context.stroke()
     }
-    context.lineCap = 'round'
-    trace()
-    context.strokeStyle = 'rgba(0, 0, 0, 0.55)'
-    context.lineWidth = 2.6
-    context.stroke()
-    context.strokeStyle = THREAD
-    context.lineWidth = 1.3
-    context.stroke()
   }
   context.restore()
   return true
