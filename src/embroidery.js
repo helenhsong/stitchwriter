@@ -1312,22 +1312,22 @@ export class LaceRenderer {
     soften(this.textLayer, this.ratio * 0.3)
   }
 
-  // Draw a deleted letter `pulled` of the way out: each stitch is shifted
-  // along the worked path toward its end, and stitches past the end are
-  // gone through the hole.
+  // Draw a deleted letter `pulled` of the way out. Pulling the loose end
+  // undoes the last stitch worked first, so the run of stitches slides
+  // back along its path toward the first one and out through that hole:
+  // the letter empties from the bottom up.
   drawGhostAt(context, ghost, pulled, firstRow, lastRow) {
     const { geometry } = this
     const { item } = ghost
     const { cells } = item.glyph
     const baseRow = geometry.baselineOffset + item.line * geometry.lineHeight
-    const last = cells.length - 1
     const shift = pulled * cells.length
-    for (let k = 0; k < cells.length; k += 1) {
-      const at = k + shift
-      if (at > last) break
-      const from = cells[Math.floor(at)]
-      const to = cells[Math.min(last, Math.floor(at) + 1)]
-      const f = at - Math.floor(at)
+    for (let k = cells.length - 1; k >= 0; k -= 1) {
+      const at = k - shift
+      if (at < 0) break
+      const from = cells[Math.ceil(at)]
+      const to = cells[Math.max(0, Math.ceil(at) - 1)]
+      const f = Math.ceil(at) - at
       const { gx, gy } = this.toGrid(
         item.col + from[0] + (to[0] - from[0]) * f,
         baseRow + from[1] + (to[1] - from[1]) * f,
@@ -1408,9 +1408,9 @@ export class LaceRenderer {
       })
     }
 
-    // A deleted letter is pulled out like a single thread: the whole run of
-    // stitches slides along the path it was worked in and is drawn out
-    // through the hole of its last stitch, picking up speed as it goes.
+    // A deleted letter is pulled out like a single thread: the run of
+    // stitches slides back along the path it was worked in and is drawn
+    // out, last stitch first, picking up speed as it goes.
     for (const ghost of scene.ghosts ?? []) {
       if (now >= ghost.end || now < ghost.start) {
         if (now < ghost.start) this.drawGhostAt(context, ghost, 0, firstRow, lastRow)
