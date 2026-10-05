@@ -124,19 +124,23 @@ function App() {
     () => (fontReady ? layoutText(text || PLACEHOLDER, geometry) : null),
     [fontReady, geometry, text],
   )
-  const overflowRows = layout
-    ? Math.max(0, layout.height - geometry.visibleTextRows)
+  // The piece is sized to its writing: it starts with room for a couple
+  // of lines and grows a row at a time as the writing gets longer.
+  const minimumRows =
+    geometry.baselineOffset + geometry.lineHeight + Math.round(geometry.em * 0.5)
+  const growRows = layout
+    ? Math.max(minimumRows, layout.height) - geometry.visibleTextRows
     : 0
+  const overflowRows = Math.max(0, growRows)
   const maxScroll = overflowRows * geometry.cell
   const documentHeight = viewport.height + overflowRows * geometry.cell
-  // The piece itself grows downward as the writing overflows it.
   const pieceGeometry = useMemo(
     () => ({
       ...geometry,
-      frame: { ...geometry.frame, bottom: geometry.frame.bottom + overflowRows },
-      inner: { ...geometry.inner, bottom: geometry.inner.bottom + overflowRows },
+      frame: { ...geometry.frame, bottom: geometry.frame.bottom + growRows },
+      inner: { ...geometry.inner, bottom: geometry.inner.bottom + growRows },
     }),
-    [geometry, overflowRows],
+    [geometry, growRows],
   )
   const caretCell = useMemo(
     () => (layout ? caretPosition(layout, placeholder ? 0 : caret) : { col: 0, line: 0 }),
