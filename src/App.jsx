@@ -234,10 +234,11 @@ function App() {
           births: birthsRef.current,
           placeholder,
           caret: caretCell,
+          caretIndex: caret,
           reducedMotion,
         }
       : null
-  }, [caretCell, layout, maxScroll, pieceGeometry, placeholder, reducedMotion])
+  }, [caret, caretCell, layout, maxScroll, pieceGeometry, placeholder, reducedMotion])
 
   useEffect(() => {
     if (!fontReady || readmeOpen || !canvasRef.current) return undefined

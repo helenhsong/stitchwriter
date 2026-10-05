@@ -1438,10 +1438,21 @@ export class LaceRenderer {
       target = this.cellCenter(gx, gy)
       working = true
     } else {
-      const row = geometry.baselineOffset + caret.line * geometry.lineHeight - Math.round(geometry.em * 0.28)
-      const { gx, gy } = this.toGrid(caret.col, row)
-      target = this.cellCenter(gx, gy)
-      target.x -= cell / 2
+      // At rest the thread stays where the last letter before the cursor
+      // was finished: its final stitch. With nothing stitched just before
+      // the cursor on this line, it waits at the cursor itself.
+      const before = layout.characters[(scene.caretIndex ?? 0) - 1]
+      if (before?.glyph && before.line === caret.line) {
+        const [dx, dy] = before.glyph.cells.at(-1)
+        const baseRow = geometry.baselineOffset + before.line * geometry.lineHeight
+        const { gx, gy } = this.toGrid(before.col + dx, baseRow + dy)
+        target = this.cellCenter(gx, gy)
+      } else {
+        const row = geometry.baselineOffset + caret.line * geometry.lineHeight - Math.round(geometry.em * 0.28)
+        const { gx, gy } = this.toGrid(caret.col, row)
+        target = this.cellCenter(gx, gy)
+        target.x -= cell / 2
+      }
     }
 
     const elapsed = this.lastFrame ? Math.min(64, now - this.lastFrame) : 16
