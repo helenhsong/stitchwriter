@@ -934,10 +934,12 @@ function ornamentCells(geometry) {
 }
 
 const CAPTION = 'type anything you want'
-const CAPTION_EM = 13
-// A sturdier italic than the writing's, so the small letters survive
-// being charted to so few cells.
-const CAPTION_FACE = { style: 'italic 400', family: 'Georgia, "Times New Roman", serif' }
+const CAPTION_EM = 12
+// A rounder, sturdier italic than the writing's, so the small letters
+// stay graceful when charted to so few cells.
+export const CAPTION_FONT = 'Lora, Georgia, serif'
+export const CAPTION_FONT_STYLE = 'italic 400'
+const CAPTION_FACE = { style: CAPTION_FONT_STYLE, family: CAPTION_FONT }
 
 // Picot loops all around the outside of the border: the scalloped edge
 // that finishes a piece of lace.
