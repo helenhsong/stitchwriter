@@ -94,25 +94,23 @@ export function createGeometry(viewportWidth, viewportHeight) {
 const glyphCache = new Map()
 let measureContext = null
 
-function getMeasureContext(em, face) {
+function getMeasureContext(em) {
   if (!measureContext) {
     measureContext = document.createElement('canvas').getContext('2d')
   }
-  measureContext.font = face
-    ? `${face.style} ${em * SUBSAMPLE}px ${face.family}`
-    : `${STITCH_FONT_STYLE} ${em * SUBSAMPLE}px ${STITCH_FONT}`
+  measureContext.font = `${STITCH_FONT_STYLE} ${em * SUBSAMPLE}px ${STITCH_FONT}`
   return measureContext
 }
 
 // Rasterize one character to filet cells. Cells are relative to the glyph's
 // origin column and baseline row, and are ordered the way they are worked:
 // row by row, turning back at the end of each row like crochet.
-export function getGlyph(character, em, face) {
-  const cacheKey = `${em}:${face?.family ?? ''}:${character}`
+export function getGlyph(character, em) {
+  const cacheKey = `${em}:${character}`
   const cached = glyphCache.get(cacheKey)
   if (cached) return cached
 
-  const measure = getMeasureContext(em, face)
+  const measure = getMeasureContext(em)
   const advance = measure.measureText(character).width / SUBSAMPLE
   const pad = Math.ceil(em * 0.5)
   const ascent = Math.ceil(em * 1.05)
@@ -1200,86 +1198,41 @@ function drawFray(context, points, width, amount) {
   context.restore()
 }
 
-const HINT = 'just start typing'
+const CAPTION = 'type anything you want'
+const CAPTION_FONT = `${STITCH_FONT_STYLE} 13px ${STITCH_FONT}`
 
-const HINT_EM = 12
-// A plain upright face charts far more legibly than the italic at this
-// small size.
-const HINT_FACE = { style: '700', family: 'Georgia, "Times New Roman", serif' }
-
-// The hint shown before anything is written, charted as filet cells and
-// centred in the piece. Cells are in document grid coordinates.
-function hintCells(geometry) {
-  const { inner } = geometry
-  const glyphs = Array.from(HINT).map((character) => getGlyph(character, HINT_EM, HINT_FACE))
-  const width = glyphs.reduce((sum, glyph) => sum + glyph.advance, 0)
-  let x = (inner.left + inner.right + 1) / 2 - width / 2
-  const baseline = Math.round((inner.top + inner.bottom + 1) / 2 + HINT_EM * 0.3)
-  const cells = []
-  for (const glyph of glyphs) {
-    for (const [dx, dy] of glyph.cells) cells.push([Math.round(x) + dx, baseline + dy])
-    x += glyph.advance
-  }
-  return { cells, left: Math.round((inner.left + inner.right + 1) / 2 - width / 2), width, baseline }
-}
-
-const HINT_PULL_MS = 1500
-const HINT_TAIL_MS = 450
-
-// Draw the hint as fine white thread worked over the mesh. Once writing
-// begins it is unpicked: the thread is pulled out from the first letter
-// on, the stitches vanishing behind it while the loose, crimped strand is
-// drawn up and away, until its tail slips free. Returns whether anything
-// is still showing.
-function drawHint(renderer, context, geometry, elapsed) {
-  const { cell } = geometry
-  const hint = hintCells(geometry)
-  const y = (hint.baseline - HINT_EM * 0.3) * cell
-  const pulling = elapsed !== null
-  const t = pulling ? elapsed : 0
-  const progress = pulling ? clamp(t / HINT_PULL_MS, 0, 1) ** 1.4 : 0
-  const pullCol = hint.left + hint.width * progress
-  if (pulling && t > HINT_PULL_MS + HINT_TAIL_MS) return false
+// A small italic caption set on a gentle arc just above the ribbon bow,
+// worked in fine white thread. Drawn in document pixels.
+function drawCaption(context, geometry) {
+  const { cell, frame, motif } = geometry
+  const middle = ((frame.left + frame.right + 1) / 2) * cell
+  const bowHeight = Math.round((motif * 3 + 4) * 0.45)
+  const top = (frame.top - Math.round(bowHeight * 0.5)) * cell
+  const baseline = top - 9
+  const radius = 260
 
   context.save()
-  for (const [gx, gy] of hint.cells) {
-    if (gx < pullCol) continue
-    // The stitch at the pull point loosens as it comes undone.
-    const loosen = pulling ? clamp(1 - (gx - pullCol) / 2, 0, 1) : 0
-    renderer.drawBlock(context, gx, gy, 1 - loosen * 0.4)
-  }
-
-  if (pulling) {
-    // A short, crimped loose end trails from where the stitches are coming
-    // undone, then slips out through the mesh.
-    const slip = clamp((t - HINT_PULL_MS) / HINT_TAIL_MS, 0, 1)
-    const start = { x: pullCol * cell, y: y - 2 }
-    const length = (22 + 10 * progress) * (1 - slip)
-    if (length > 1) {
-      const points = []
-      const count = 16
-      for (let k = 0; k <= count; k += 1) {
-        const u = k / count
-        points.push({
-          x: start.x - u * length * 0.85,
-          y: start.y + u * length * 0.5 + Math.sin(k * 1.7) * 1.1 * u,
-        })
-      }
-      context.lineCap = 'round'
-      context.lineJoin = 'round'
-      context.beginPath()
-      context.moveTo(points[0].x, points[0].y)
-      for (const point of points.slice(1)) context.lineTo(point.x, point.y)
-      context.strokeStyle = 'rgba(0, 0, 0, 0.45)'
-      context.lineWidth = 2.2
-      context.stroke()
-      context.strokeStyle = THREAD
-      context.lineWidth = 1.1
-      context.stroke()
-    }
+  context.font = CAPTION_FONT
+  context.textBaseline = 'alphabetic'
+  context.lineJoin = 'round'
+  const total = context.measureText(CAPTION).width * 1.06
+  let along = -total / 2
+  for (const character of CAPTION) {
+    const width = context.measureText(character).width * 1.06
+    const angle = (along + width / 2) / radius
+    context.save()
+    // Centre of the arc sits below the caption, so it curves over the bow.
+    context.translate(middle + Math.sin(angle) * radius, baseline + radius - Math.cos(angle) * radius)
+    context.rotate(angle)
+    context.strokeStyle = 'rgba(10, 10, 10, 0.75)'
+    context.lineWidth = 2.2
+    context.strokeText(character, -width / 2, 0)
+    context.fillStyle = THREAD
+    context.fillText(character, -width / 2, 0)
+    context.restore()
+    along += width
   }
   context.restore()
-  return true
 }
 
 export class LaceRenderer {
@@ -1532,16 +1485,7 @@ export class LaceRenderer {
       })
     }
 
-    // Before anything is written, a tiny hint; once writing begins, its
-    // letters come loose and drop away.
-    if (placeholder && !this.hintShedAt) {
-      this.hintShown = true
-      drawHint(this, context, scene.pieceGeometry, null)
-    } else if (this.hintShown && !this.hintGone) {
-      this.hintShedAt ??= now
-      const showing = drawHint(this, context, scene.pieceGeometry, now - this.hintShedAt)
-      if (!showing || reducedMotion) this.hintGone = true
-    }
+    drawCaption(context, scene.pieceGeometry)
 
     // The thread comes out of the cell being worked, or rests at the
     // insertion point.
