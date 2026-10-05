@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ProjectHeader } from '@helenhsong/ui'
 import '@helenhsong/ui/style.css'
-import '@fontsource/cormorant-garamond/latin-700-italic.css'
+import '@fontsource/cormorant-garamond/latin-600-italic.css'
 import readme from '../README.md?raw'
 import {
   HEADER_HEIGHT,
@@ -120,6 +120,15 @@ function App() {
     : 0
   const visibleScrollRows = Math.min(scrollRows, overflowRows)
   const documentHeight = viewport.height + overflowRows * geometry.cell
+  // The piece itself grows downward as the writing overflows it.
+  const pieceGeometry = useMemo(
+    () => ({
+      ...geometry,
+      frame: { ...geometry.frame, bottom: geometry.frame.bottom + overflowRows },
+      inner: { ...geometry.inner, bottom: geometry.inner.bottom + overflowRows },
+    }),
+    [geometry, overflowRows],
+  )
   const caretCell = useMemo(
     () => (layout ? caretPosition(layout, placeholder ? 0 : caret) : { col: 0, line: 0 }),
     [caret, layout, placeholder],
@@ -191,13 +200,14 @@ function App() {
       ? {
           layout,
           scrollRows: visibleScrollRows,
+          pieceGeometry,
           births: birthsRef.current,
           placeholder,
           caret: caretCell,
           reducedMotion,
         }
       : null
-  }, [caretCell, layout, placeholder, reducedMotion, visibleScrollRows])
+  }, [caretCell, layout, pieceGeometry, placeholder, reducedMotion, visibleScrollRows])
 
   useEffect(() => {
     if (!fontReady || readmeOpen || !canvasRef.current) return undefined
@@ -243,18 +253,26 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [fontReady, readmeOpen])
 
-  // Keep the thread on screen as the text grows past the bottom border.
+  // Keep the insertion point on screen as the piece grows.
   useEffect(() => {
     if (!layout || placeholder) return
     const caretBottom =
+      geometry.textTop +
       geometry.baselineOffset +
       caretCell.line * geometry.lineHeight +
-      Math.round(geometry.em * 0.6)
-    const caretTop = caretBottom - geometry.lineHeight
-    if (caretBottom > scrollRows + geometry.visibleTextRows) {
-      window.scrollTo({ top: (caretBottom - geometry.visibleTextRows) * geometry.cell })
-    } else if (caretTop < scrollRows) {
-      window.scrollTo({ top: Math.max(0, caretTop) * geometry.cell })
+      Math.round(geometry.em * 0.9)
+    const caretTop = caretBottom - geometry.lineHeight - Math.round(geometry.em * 0.4)
+    const headerRows = Math.ceil(HEADER_HEIGHT / geometry.cell)
+    if (caretBottom - scrollRows > geometry.rows - 3) {
+      // On the last line, show the whole bottom of the piece.
+      const lastLine = caretCell.line === layout.lines - 1
+      window.scrollTo({
+        top: lastLine
+          ? document.documentElement.scrollHeight
+          : (caretBottom - geometry.rows + 3) * geometry.cell,
+      })
+    } else if (caretTop - scrollRows < headerRows + 1) {
+      window.scrollTo({ top: Math.max(0, caretTop - headerRows - 1) * geometry.cell })
     }
   }, [caretCell.line, geometry, layout, placeholder, scrollRows])
 
@@ -270,11 +288,11 @@ function App() {
     if (!layout || placeholder) return null
     const col = clientX / geometry.cell - geometry.textLeft
     const row = clientY / geometry.cell - geometry.textTop + visibleScrollRows
+    const x = clientX / geometry.cell
+    const y = clientY / geometry.cell + visibleScrollRows
+    const { inner } = pieceGeometry
     const insideBorder =
-      clientX / geometry.cell >= geometry.inner.left &&
-      clientX / geometry.cell <= geometry.inner.right + 1 &&
-      clientY / geometry.cell >= geometry.inner.top &&
-      clientY / geometry.cell <= geometry.inner.bottom + 1
+      x >= inner.left && x <= inner.right + 1 && y >= inner.top && y <= inner.bottom + 1
     return insideBorder ? caretIndexAt(layout, geometry, col, row) : null
   }
 

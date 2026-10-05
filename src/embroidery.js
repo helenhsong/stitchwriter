@@ -3,7 +3,7 @@
 // pictures are worked.
 
 export const STITCH_FONT = '"Cormorant Garamond", Georgia, serif'
-export const STITCH_FONT_STYLE = 'italic 700'
+export const STITCH_FONT_STYLE = 'italic 600'
 export const HEADER_HEIGHT = 66
 
 const VELVET = '#0a0a0a'
@@ -30,36 +30,44 @@ function hash(x, y) {
 
 export function createGeometry(viewportWidth, viewportHeight) {
   const compact = viewportWidth < 560
-  const cell = compact ? 4.5 : clamp(Math.round(viewportWidth / 180), 6, 9)
-  const em = compact ? 15 : 17
+  // A fine mesh, like thread-weight filet lace: more, smaller cells.
+  const cell = compact ? 3.5 : clamp(Math.round(viewportWidth / 290), 4, 6)
+  const em = compact ? 19 : 21
+  const motif = compact ? 9 : 13
+  const arch = compact ? 7 : 11
+  const notch = compact ? 9 : 13
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
   const headerRows = Math.ceil(HEADER_HEIGHT / cell)
-  const side = compact ? 2 : 4
+  const side = compact ? 6 : 10
   const frame = {
     left: side,
     right: Math.floor(viewportWidth / cell) - 1 - side,
-    top: headerRows + 1,
-    bottom: Math.floor(viewportHeight / cell) - 1 - (compact ? 3 : 4),
+    top: headerRows + 2,
+    bottom: Math.floor(viewportHeight / cell) - 1 - (compact ? 7 : 9),
   }
-  // Text lives inside the double border (2 solid + 1 open + 1 solid).
+  // The writing sits in the straight-sided middle of the piece, inside the
+  // double border (3 solid + 2 open + 1 solid) and clear of the arches.
   const inner = {
-    left: frame.left + 4,
-    right: frame.right - 4,
-    top: frame.top + 4,
-    bottom: frame.bottom - 4,
+    left: frame.left + 6,
+    right: frame.right - 6,
+    top: frame.top + arch + 6,
+    bottom: frame.bottom - arch - 6,
   }
-  const padX = compact ? 3 : 6
-  const padY = compact ? 3 : 5
+  const padX = compact ? 5 : 10
+  const padY = compact ? 3 : 4
 
   return {
     cell,
     em,
+    motif,
+    arch,
+    notch,
     cols,
     rows,
     frame,
     inner,
-    lineWidth: Math.max(1, cell * 0.15),
+    lineWidth: Math.max(0.9, cell * 0.17),
     lineHeight: Math.round(em * 1.3),
     baselineOffset: em,
     textLeft: inner.left + padX,
@@ -106,7 +114,7 @@ export function getGlyph(character, em) {
   // Thicken hairlines so thin serifs and joins survive at filet resolution.
   context.strokeStyle = '#fff'
   context.lineJoin = 'round'
-  context.lineWidth = SUBSAMPLE * 0.55
+  context.lineWidth = SUBSAMPLE * 0.35
   context.strokeText(character, pad * SUBSAMPLE, ascent * SUBSAMPLE)
 
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
@@ -397,7 +405,7 @@ function paintMesh(context, geometry) {
   buckets.forEach((segments, index) =>
     strokeStrand(context, segments, lineWidth, tones[index]),
   )
-  strokeTwist(context, buckets.flat(), lineWidth)
+  if (lineWidth >= 1.4) strokeTwist(context, buckets.flat(), lineWidth)
 
   // Small knots where chains meet trebles.
   const knotPath = new Path2D()
@@ -499,90 +507,251 @@ function makeBlockSprites(geometry, ratio) {
   return sprites
 }
 
-// Border cells in viewport-grid coordinates: a double border with stepped
-// corners, plus a small diamond motif at the middle of the top and bottom.
+// The piece's outline, a cartouche: arched top and bottom edges, straight
+// sides, and concave notches cut out of each corner.
+function archOffset(geometry, x) {
+  const { frame, arch } = geometry
+  const middle = (frame.left + frame.right) / 2
+  const half = (frame.right - frame.left) * 0.24
+  const t = (x - middle) / half
+  if (Math.abs(t) >= 1) return arch
+  return arch * (1 - (Math.cos(Math.PI * t) + 1) / 2)
+}
+
+function outlineCorners(geometry) {
+  const { frame, arch } = geometry
+  return [
+    [frame.left, frame.top + arch],
+    [frame.right, frame.top + arch],
+    [frame.left, frame.bottom - arch],
+    [frame.right, frame.bottom - arch],
+  ]
+}
+
+function insideOutline(geometry, x, y, inset) {
+  const { frame, notch } = geometry
+  if (x < frame.left + inset || x > frame.right - inset) return false
+  const rise = archOffset(geometry, x)
+  if (y < frame.top + rise + inset || y > frame.bottom - rise - inset) return false
+  for (const [cx, cy] of outlineCorners(geometry)) {
+    if (Math.hypot(x - cx, y - cy) < notch + inset) return false
+  }
+  return true
+}
+
+// Border cells in viewport-grid coordinates: a heavy outer band and a fine
+// inner line, both following the cartouche outline.
 function frameCells(geometry) {
   const { frame } = geometry
   const cells = []
-  const { left, right, top, bottom } = frame
-  const notch = 3
-
-  const push = (x, y) => cells.push([x, y])
-  const ring = (inset, thickness) => {
-    for (let t = 0; t < thickness; t += 1) {
-      const l = left + inset + t
-      const r = right - inset - t
-      const tp = top + inset + t
-      const b = bottom - inset - t
-      for (let x = l; x <= r; x += 1) {
-        push(x, tp)
-        push(x, b)
-      }
-      for (let y = tp + 1; y < b; y += 1) {
-        push(l, y)
-        push(r, y)
-      }
+  for (let y = frame.top; y <= frame.bottom; y += 1) {
+    for (let x = frame.left; x <= frame.right; x += 1) {
+      const outer = insideOutline(geometry, x, y, 0) && !insideOutline(geometry, x, y, 3)
+      const inner = insideOutline(geometry, x, y, 5) && !insideOutline(geometry, x, y, 6)
+      if (outer || inner) cells.push([x, y])
     }
   }
-
-  ring(0, 2)
-  ring(3, 1)
-
-  const corners = [
-    [left, top, -1, -1],
-    [right, top, 1, -1],
-    [left, bottom, -1, 1],
-    [right, bottom, 1, 1],
-  ]
-  for (const [cx, cy, dx, dy] of corners) {
-    for (let i = 1; i <= notch - 1; i += 1) {
-      for (let j = 1; j <= notch - 1; j += 1) {
-        if (i + j <= notch) push(cx + dx * i, cy + dy * j)
-      }
-    }
-  }
-
-  const diamond = (cx, cy) => {
-    const shape = [
-      [0, -2],
-      [-1, -1],
-      [1, -1],
-      [-2, 0],
-      [2, 0],
-      [-1, 1],
-      [1, 1],
-      [0, 2],
-    ]
-    for (const [dx, dy] of shape) push(cx + dx, cy + dy)
-  }
-  const middle = Math.round((left + right) / 2)
-  diamond(middle, top + 1)
-  diamond(middle, bottom - 1)
-
   return cells
 }
 
-// Picot loops along the outside of the border: the scalloped edge that
-// finishes a piece of lace.
+// Rasterize a small drawing (in cell units) to filet cells, the same way
+// glyphs are charted.
+function chart(width, height, draw) {
+  const canvas = document.createElement('canvas')
+  canvas.width = width * SUBSAMPLE
+  canvas.height = height * SUBSAMPLE
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  context.scale(SUBSAMPLE, SUBSAMPLE)
+  context.fillStyle = '#fff'
+  context.strokeStyle = '#fff'
+  context.lineCap = 'round'
+  context.lineJoin = 'round'
+  draw(context)
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+  const cells = []
+  for (let cy = 0; cy < height; cy += 1) {
+    for (let cx = 0; cx < width; cx += 1) {
+      let covered = 0
+      for (let sy = 0; sy < SUBSAMPLE; sy += 1) {
+        const offset = ((cy * SUBSAMPLE + sy) * canvas.width + cx * SUBSAMPLE) * 4
+        for (let sx = 0; sx < SUBSAMPLE; sx += 1) {
+          covered += pixels[offset + sx * 4 + 3] / 255
+        }
+      }
+      if (covered / (SUBSAMPLE * SUBSAMPLE) >= 0.45) cells.push([cx, cy])
+    }
+  }
+  return cells
+}
+
+// Four-pointed sparkle with a ring of tiny stars, as in the moon piece.
+function sparkle(size) {
+  return chart(size, size, (context) => {
+    const c = size / 2
+    const long = size / 2
+    const waist = size * 0.09
+    context.beginPath()
+    context.moveTo(c, c - long)
+    context.lineTo(c + waist, c - waist)
+    context.lineTo(c + long, c)
+    context.lineTo(c + waist, c + waist)
+    context.lineTo(c, c + long)
+    context.lineTo(c - waist, c + waist)
+    context.lineTo(c - long, c)
+    context.lineTo(c - waist, c - waist)
+    context.closePath()
+    context.fill()
+    context.fillRect(c - size * 0.38, c - size * 0.38, 1, 1)
+    context.fillRect(c + size * 0.3, c - size * 0.38, 1, 1)
+    context.fillRect(c - size * 0.38, c + size * 0.3, 1, 1)
+    context.fillRect(c + size * 0.3, c + size * 0.3, 1, 1)
+  })
+}
+
+// Four-leaf clover on a curved stem.
+function clover(size) {
+  return chart(size, size, (context) => {
+    const c = size / 2
+    const leaf = size * 0.2
+    for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      context.beginPath()
+      context.arc(c + dx * leaf * 0.95, c - size * 0.08 + dy * leaf * 0.95, leaf, 0, Math.PI * 2)
+      context.fill()
+    }
+    context.lineWidth = Math.max(1, size * 0.09)
+    context.beginPath()
+    context.moveTo(c, c)
+    context.quadraticCurveTo(c + size * 0.12, c + size * 0.3, c + size * 0.3, size - 0.6)
+    context.stroke()
+  })
+}
+
+// A ribbon bow, tied at the top of the piece.
+function bow(width) {
+  const height = Math.round(width * 0.45)
+  return {
+    width,
+    height,
+    cells: chart(width, height, (context) => {
+      const c = width / 2
+      context.lineWidth = Math.max(1.3, width * 0.055)
+      for (const side of [-1, 1]) {
+        context.save()
+        context.translate(c + side * width * 0.24, height * 0.36)
+        context.rotate(side * 0.38)
+        context.beginPath()
+        context.ellipse(0, 0, width * 0.2, height * 0.24, 0, 0, Math.PI * 2)
+        context.stroke()
+        context.restore()
+        context.beginPath()
+        context.moveTo(c, height * 0.45)
+        context.quadraticCurveTo(
+          c + side * width * 0.12,
+          height * 0.7,
+          c + side * width * 0.2,
+          height - 1,
+        )
+        context.stroke()
+      }
+      context.beginPath()
+      context.arc(c, height * 0.42, width * 0.05, 0, Math.PI * 2)
+      context.fill()
+    }),
+  }
+}
+
+// A small rosette: a ring of petals around a solid centre.
+function rosette(size) {
+  return chart(size, size, (context) => {
+    const c = size / 2
+    context.beginPath()
+    context.arc(c, c, size * 0.14, 0, Math.PI * 2)
+    context.fill()
+    for (let k = 0; k < 8; k += 1) {
+      const angle = (k / 8) * Math.PI * 2
+      context.beginPath()
+      context.arc(c + Math.cos(angle) * size * 0.33, c + Math.sin(angle) * size * 0.33, size * 0.09, 0, Math.PI * 2)
+      context.fill()
+    }
+  })
+}
+
+// Ornament cells in viewport-grid coordinates.
+function ornamentCells(geometry) {
+  const { frame, motif, arch } = geometry
+  const cells = []
+  const place = (shape, size, cx, cy) => {
+    const left = Math.round(cx - size / 2)
+    const top = Math.round(cy - size / 2)
+    for (const [x, y] of shape) cells.push([left + x, top + y])
+  }
+
+  // A motif sits in each corner notch, outside the border.
+  const [topLeft, topRight, bottomLeft, bottomRight] = outlineCorners(geometry)
+  const star = sparkle(motif)
+  const leaf = clover(motif)
+  place(star, motif, topLeft[0] + 1, topLeft[1] - 1)
+  place(star, motif, topRight[0], topRight[1] - 1)
+  place(leaf, motif, bottomLeft[0] + 1, bottomLeft[1] + 1)
+  place(leaf.map(([x, y]) => [motif - 1 - x, y]), motif, bottomRight[0], bottomRight[1] + 1)
+
+  // Small motifs nested in the top and bottom arches.
+  const middle = (frame.left + frame.right) / 2
+  const small = Math.max(5, arch - 2)
+  place(sparkle(small), small, middle, frame.top + 6 + small / 2)
+  place(rosette(small + 1), small + 1, middle, frame.bottom - 6 - (small + 1) / 2)
+
+  // A ribbon bow tied over the top arch.
+  const ribbon = bow(motif * 3 + 4)
+  for (const [x, y] of ribbon.cells) {
+    cells.push([
+      Math.round(middle - ribbon.width / 2) + x,
+      frame.top - Math.round(ribbon.height * 0.5) + y,
+    ])
+  }
+  return cells
+}
+
+// Picot loops all around the outside of the border: the scalloped edge
+// that finishes a piece of lace.
 function paintPicots(context, geometry) {
-  const { frame, cell, lineWidth } = geometry
+  const { frame, cell, lineWidth, notch } = geometry
   const radius = cell * 0.95
   const path = new Path2D()
-  const left = frame.left * cell
-  const right = (frame.right + 1) * cell + lineWidth
-  const top = frame.top * cell
-  const bottom = (frame.bottom + 1) * cell + lineWidth
-  const loop = (x, y, angle) => {
+  const loop = (gx, gy, angle) => {
+    const x = gx * cell + lineWidth / 2
+    const y = gy * cell + lineWidth / 2
     path.moveTo(x + Math.cos(angle - Math.PI / 2) * radius, y + Math.sin(angle - Math.PI / 2) * radius)
     path.arc(x, y, radius, angle - Math.PI / 2, angle + Math.PI / 2)
   }
-  for (let x = left + cell * 4; x <= right - cell * 4; x += cell * 2) {
-    loop(x, top, -Math.PI / 2)
-    loop(x, bottom, Math.PI / 2)
+  const corners = outlineCorners(geometry)
+  const clearOfNotches = (x, y) =>
+    corners.every(([cx, cy]) => Math.hypot(x - cx, y - cy) > notch + 1)
+
+  // Top and bottom edges follow the arches.
+  for (let x = frame.left + 1; x <= frame.right; x += 2) {
+    const rise = archOffset(geometry, x)
+    const slope = (archOffset(geometry, x + 0.5) - archOffset(geometry, x - 0.5))
+    const top = frame.top + rise
+    const bottom = frame.bottom + 1 - rise
+    if (clearOfNotches(x, top)) loop(x, top, -Math.PI / 2 + Math.atan(slope))
+    if (clearOfNotches(x, bottom)) loop(x, bottom, Math.PI / 2 + Math.atan(slope))
   }
-  for (let y = top + cell * 4; y <= bottom - cell * 4; y += cell * 2) {
-    loop(left, y, Math.PI)
-    loop(right, y, 0)
+  for (let y = frame.top + 1; y <= frame.bottom; y += 2) {
+    if (clearOfNotches(frame.left, y)) loop(frame.left, y, Math.PI)
+    if (clearOfNotches(frame.right + 1, y)) loop(frame.right + 1, y, 0)
+  }
+  // Around each notch, pointing into it.
+  for (const [cx, cy] of corners) {
+    const steps = Math.round((notch * Math.PI) / 2 / 2)
+    for (let k = 0; k <= steps; k += 1) {
+      const angle = (k / steps) * Math.PI * 2
+      const x = cx + Math.cos(angle) * notch
+      const y = cy + Math.sin(angle) * notch
+      if (insideOutline(geometry, Math.round(x + Math.cos(angle) * 1.5), Math.round(y + Math.sin(angle) * 1.5), 0)) {
+        loop(x, y, angle + Math.PI)
+      }
+    }
   }
 
   context.save()
@@ -645,8 +814,8 @@ function bezierPoints(p0, p1, p2, p3, count) {
 // insertion point and hanging down under its own weight.
 function drawThread(context, origin, geometry, swing) {
   const { cell } = geometry
-  const width = Math.max(2.4, cell * 0.42)
-  const length = Math.max(54, geometry.em * cell * 1.05)
+  const width = Math.max(1.8, cell * 0.38)
+  const length = Math.max(54, geometry.em * cell * 0.9)
   const end = {
     x: origin.x + cell * 1.6 + swing * cell * 1.4,
     y: origin.y + length,
@@ -760,7 +929,9 @@ export class LaceRenderer {
     this.canvas.height = Math.round(height * ratio)
     this.blocks = makeBlockSprites(geometry, ratio)
     this.meshLayer = makeCanvas(width, height, ratio)
+    this.holesLayer = makeCanvas(width, height, ratio)
     this.textLayer = makeCanvas(width, height, ratio)
+    this.ornamentKey = ''
     this.paintBase()
     this.textKey = ''
     this.anchor = null
@@ -797,15 +968,18 @@ export class LaceRenderer {
     }
   }
 
+  // The fixed layers: velvet and open mesh fill the viewport, and the
+  // header links get holes cut in the lace above everything else.
   paintBase() {
     const { geometry } = this
-    const { context } = this.meshLayer
     const { cell, lineWidth } = geometry
-    paintVelvet(context, this.width, this.height)
-    paintMesh(context, geometry)
+    paintVelvet(this.meshLayer.context, this.width, this.height)
+    paintMesh(this.meshLayer.context, geometry)
+    soften(this.meshLayer, this.ratio * 0.45)
 
     // Cut a hole in the lace under each header link, finished with a solid
     // edge, so the links stay legible on top of the fabric.
+    const { context } = this.holesLayer
     for (const hole of labelHoles(geometry)) {
       context.save()
       context.beginPath()
@@ -826,35 +1000,41 @@ export class LaceRenderer {
         }
       }
     }
-
-    for (const [x, y] of frameCells(geometry)) this.drawBlock(context, x, y)
-    paintPicots(context, geometry)
-    soften(this.meshLayer, this.ratio * 0.45)
+    soften(this.holesLayer, this.ratio * 0.45)
   }
 
-  // Map a text-area cell to viewport grid coordinates, or null if the
-  // border clips it.
+  // Map a text cell to viewport grid coordinates, or null when it is off
+  // screen. The whole piece scrolls with the page, row by row.
   toGrid(col, row, scrollRows) {
     const { geometry } = this
     const gx = geometry.textLeft + col
     const gy = geometry.textTop + row - scrollRows
-    if (
-      gx < geometry.inner.left ||
-      gx > geometry.inner.right ||
-      gy < geometry.inner.top ||
-      gy > geometry.inner.bottom
-    ) {
-      return null
-    }
+    if (gx < -1 || gx > geometry.cols || gy < -1 || gy > geometry.rows) return null
     return { gx, gy }
   }
 
   renderText(scene, animating) {
     const { geometry } = this
     const { context } = this.textLayer
-    const { layout, scrollRows, placeholder } = scene
-    const { cell, lineWidth } = geometry
+    const { layout, scrollRows, placeholder, pieceGeometry } = scene
+    const { cell, lineWidth, rows } = geometry
     context.clearRect(0, 0, this.width, this.height)
+
+    // The border and ornaments grow with the writing, so they live in
+    // document space and scroll with it.
+    const ornamentKey = `${pieceGeometry.frame.bottom}`
+    if (ornamentKey !== this.ornamentKey) {
+      this.ornaments = [...frameCells(pieceGeometry), ...ornamentCells(pieceGeometry)]
+      this.ornamentKey = ornamentKey
+    }
+    for (const [x, y] of this.ornaments) {
+      const gy = y - scrollRows
+      if (gy >= -1 && gy <= rows) this.drawBlock(context, x, gy)
+    }
+    context.save()
+    context.translate(0, -scrollRows * cell)
+    paintPicots(context, pieceGeometry)
+    context.restore()
 
     for (const item of layout.characters) {
       if (!item.glyph || animating.has(item.index)) continue
@@ -880,7 +1060,7 @@ export class LaceRenderer {
         }
       }
     }
-    if (!placeholder) soften(this.textLayer, this.ratio * 0.35)
+    soften(this.textLayer, this.ratio * 0.4)
   }
 
   cellCenter(gx, gy) {
@@ -911,6 +1091,7 @@ export class LaceRenderer {
       layout.characters.map((item) => `${item.col},${item.line}`).join(';'),
       scrollRows,
       placeholder,
+      scene.pieceGeometry.frame.bottom,
       [...animating].join(','),
     ].join('|')
     if (textKey !== this.textKey) {
@@ -937,6 +1118,10 @@ export class LaceRenderer {
         if (point) this.drawBlock(context, point.gx, point.gy, progress)
       })
     }
+
+    context.setTransform(1, 0, 0, 1, 0, 0)
+    context.drawImage(this.holesLayer.canvas, 0, 0)
+    context.setTransform(ratio, 0, 0, ratio, 0, 0)
 
     // The thread comes out of the cell being worked, or rests at the
     // insertion point.
