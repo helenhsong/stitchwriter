@@ -832,7 +832,7 @@ function soften(layer, amount) {
 }
 
 // The header links' lettering, embroidered finely in black thread.
-const BUTTON_FONT = '600 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+const BUTTON_FONT = '700 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
 
 // A slim fabric button for each header link, worked into the lace and
 // centred on the link.
@@ -1162,32 +1162,58 @@ export class LaceRenderer {
     for (const button of buttons) this.embroiderLabel(context, button)
   }
 
-  // Embroider a button's label: dark thread lettering crossed by fine
-  // slanted satin stitches that catch the light.
+  // Embroider a button's label in black thread: the lettering is laid
+  // out on a fine stitch grid and each covered point gets a short slanted
+  // satin stitch with a glint of light along it, so the letters read as
+  // worked in thread rather than printed.
   embroiderLabel(context, { label, left, top, right, bottom }) {
-    const { cell } = this.geometry
-    const { canvas: stitch, context: thread } = makeCanvas(this.width, this.height, this.ratio)
-    const x = ((left + right + 1) / 2) * cell + this.geometry.lineWidth / 2
-    const y = ((top + bottom + 1) / 2) * cell + this.geometry.lineWidth / 2
-    thread.font = BUTTON_FONT
-    thread.textAlign = 'center'
-    thread.textBaseline = 'middle'
-    thread.fillStyle = '#161615'
-    thread.fillText(label, x, y + 0.5)
-    thread.globalCompositeOperation = 'source-atop'
-    thread.strokeStyle = 'rgba(120, 120, 116, 0.55)'
-    thread.lineWidth = 0.5
-    thread.beginPath()
-    for (let sx = left * cell - 20; sx < (right + 1) * cell + 20; sx += 1.6) {
-      thread.moveTo(sx, top * cell)
-      thread.lineTo(sx + 6, (bottom + 1) * cell)
+    const { cell, lineWidth } = this.geometry
+    const x = ((left + right + 1) / 2) * cell + lineWidth / 2
+    const y = ((top + bottom + 1) / 2) * cell + lineWidth / 2
+    const scale = 4
+    const box = { left: left * cell, top: top * cell, width: (right - left + 1) * cell, height: (bottom - top + 1) * cell }
+    const guide = document.createElement('canvas')
+    guide.width = Math.ceil(box.width * scale)
+    guide.height = Math.ceil(box.height * scale)
+    const ink = guide.getContext('2d', { willReadFrequently: true })
+    ink.scale(scale, scale)
+    ink.font = BUTTON_FONT
+    ink.textAlign = 'center'
+    ink.textBaseline = 'middle'
+    ink.fillStyle = '#000'
+    ink.fillText(label, x - box.left, y - box.top + 0.5)
+    const pixels = ink.getImageData(0, 0, guide.width, guide.height).data
+    const covered = (px, py) => {
+      const gx = Math.round((px - box.left) * scale)
+      const gy = Math.round((py - box.top) * scale)
+      if (gx < 0 || gy < 0 || gx >= guide.width || gy >= guide.height) return false
+      return pixels[(gy * guide.width + gx) * 4 + 3] > 110
     }
-    thread.stroke()
+
+    const pitch = 1.15
+    const stitches = new Path2D()
+    const glints = new Path2D()
+    for (let py = box.top; py < box.top + box.height; py += pitch) {
+      for (let px = box.left; px < box.left + box.width; px += pitch) {
+        if (!covered(px, py)) continue
+        const jitter = (hash(px, py) - 0.5) * 0.25
+        stitches.moveTo(px - pitch * 0.55, py + pitch * 0.45 + jitter)
+        stitches.lineTo(px + pitch * 0.55, py - pitch * 0.45 + jitter)
+        glints.moveTo(px - pitch * 0.3, py + pitch * 0.05 + jitter)
+        glints.lineTo(px + pitch * 0.25, py - pitch * 0.4 + jitter)
+      }
+    }
     context.save()
-    context.setTransform(1, 0, 0, 1, 0, 0)
-    context.drawImage(stitch, 0, 0)
+    context.lineCap = 'round'
+    context.strokeStyle = '#121211'
+    context.lineWidth = pitch * 0.95
+    context.stroke(stitches)
+    context.strokeStyle = 'rgba(150, 150, 146, 0.35)'
+    context.lineWidth = pitch * 0.3
+    context.stroke(glints)
     context.restore()
   }
+
 
   // Map a text cell to document grid coordinates.
   toGrid(col, row) {
