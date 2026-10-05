@@ -43,15 +43,6 @@ html[data-ph-open] .lace-page {
   display: none;
 }
 
-.lace-loader {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-content: center;
-  color: var(--project-muted-fg);
-  font: italic 500 18px/1.4 'Cormorant Garamond', Georgia, serif;
-}
-
 .lace-input {
   position: fixed;
   z-index: -1;

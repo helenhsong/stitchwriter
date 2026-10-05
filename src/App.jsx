@@ -386,11 +386,6 @@ function App() {
               : 'An empty piece of filet lace'
           }
         />
-        {!fontReady && (
-          <div className="lace-loader" role="status" aria-live="polite">
-            threading the needle…
-          </div>
-        )}
         <textarea
           ref={inputRef}
           className="lace-input"
