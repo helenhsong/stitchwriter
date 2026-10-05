@@ -1025,7 +1025,7 @@ const lerp = (a, b, t) => a + (b - a) * t
 // hand drops and the thread goes slack, draping down and away from the
 // insertion point. `tension` moves smoothly between the two, so the thread
 // never vanishes or pops.
-function drawThread(context, origin, geometry, { stitch, progress, tension, swing }) {
+function drawThread(context, origin, geometry, { stitch, progress, tension, swing, lift = 0 }) {
   const { cell } = geometry
   const width = threadWidth(geometry)
   const ease = tension * tension * (3 - 2 * tension)
@@ -1053,16 +1053,22 @@ function drawThread(context, origin, geometry, { stitch, progress, tension, swin
 
   // Resting: a short loose end hangs straight down from the lace under its
   // own weight, swaying a little.
+  // While unpicking, the same short end is lifted up and away from the
+  // stitch it is pulling out.
   const hang = Math.max(56, geometry.em * cell * 0.95)
-  const rest = { x: origin.x + cell * 1.5 + swing * cell * 2, y: origin.y + hang }
+  const up = lift * lift * (3 - 2 * lift)
+  const rest = {
+    x: origin.x + cell * 1.5 + swing * cell * 2 + hang * 0.55 * up,
+    y: origin.y + hang * (1 - 1.85 * up),
+  }
   const slack = bezierPoints(
     origin,
-    { x: origin.x + cell * 2.5, y: origin.y + hang * 0.25 },
-    { x: rest.x - swing * cell * 1.4, y: origin.y + hang * 0.65 },
+    { x: origin.x + cell * 2.5 + hang * 0.1 * up, y: origin.y + hang * (0.25 - 0.55 * up) },
+    { x: rest.x - swing * cell * 1.4 - hang * 0.15 * up, y: origin.y + hang * (0.65 - 1.35 * up) },
     rest,
     count,
   )
-  slack.push({ x: rest.x, y: rest.y + 2400 })
+  slack.push({ x: rest.x, y: rest.y + 2400 * (1 - 2 * up) })
 
   const shape = slack.map((point, index) => ({
     x: lerp(point.x, taut[index].x, ease),
@@ -1444,10 +1450,8 @@ export class LaceRenderer {
       target = this.cellCenter(gx, gy)
       working = true
     } else if (pulling) {
-      // Unravelling: the thread runs taut from the stitch being pulled out.
+      // Unpicking: the short loose end lifts from the stitch being pulled.
       target = pulling
-      working = true
-      stitch = { index: stitch.index, progress: 1 }
     } else {
       // At rest the thread stays where the last letter before the cursor
       // was finished: its final stitch. With nothing stitched just before
@@ -1472,7 +1476,7 @@ export class LaceRenderer {
       this.anchor = { ...target, velocity: 0 }
     } else {
       const previousX = this.anchor.x
-      const follow = 1 - Math.exp(-elapsed / (working ? 22 : 60))
+      const follow = 1 - Math.exp(-elapsed / (working || pulling ? 22 : 60))
       this.anchor.x += (target.x - this.anchor.x) * follow
       this.anchor.y += (target.y - this.anchor.y) * follow
       // Moving the thread sets it swinging; it settles back slowly.
@@ -1489,11 +1493,17 @@ export class LaceRenderer {
       : (this.tension ?? 0) + (tensionTarget - (this.tension ?? 0)) * (1 - Math.exp(-elapsed / settle))
 
     const idleSway = reducedMotion ? 0 : Math.sin(now / 1100) * 0.18
+    const liftTarget = pulling && !reducedMotion ? 1 : 0
+    this.lift = reducedMotion
+      ? liftTarget
+      : (this.lift ?? 0) +
+        (liftTarget - (this.lift ?? 0)) * (1 - Math.exp(-elapsed / (liftTarget ? 50 : 220)))
     drawThread(context, this.anchor, geometry, {
       stitch: stitch.index,
       progress: stitch.progress,
       tension: this.tension,
       swing: idleSway + this.anchor.velocity,
+      lift: this.lift,
     })
     this.drawHoles()
   }
