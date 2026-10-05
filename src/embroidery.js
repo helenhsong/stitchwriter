@@ -35,27 +35,29 @@ export function createGeometry(viewportWidth, viewportHeight) {
   const compact = viewportWidth < 560
   // A fine mesh, like thread-weight filet lace: more, smaller cells.
   const cell = compact ? 2.5 : clamp(Math.round(viewportWidth / 480), 3, 4)
-  const em = compact ? 18 : 20
-  const motif = compact ? 9 : 13
-  const arch = compact ? 7 : 11
-  const notch = compact ? 9 : 13
+  const em = compact ? 15 : 16
+  const motif = compact ? 7 : 9
+  const arch = compact ? 5 : 7
+  const notch = compact ? 6 : 8
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
   const headerRows = Math.ceil(HEADER_HEIGHT / cell)
-  // Plenty of open lace all round the piece, so it sits on the fabric
-  // like a centrepiece rather than filling it.
-  const side = compact ? 11 : Math.max(16, Math.round(cols * 0.08))
+  // A small, dainty doily centred on a wide expanse of open lace.
+  const across = compact
+    ? Math.floor(viewportWidth / cell) - 40
+    : Math.round(Math.min(viewportWidth * 0.5, 720) / cell)
+  const side = Math.floor((Math.floor(viewportWidth / cell) - across) / 2)
   const frame = {
     left: side,
-    right: Math.floor(viewportWidth / cell) - 1 - side,
-    top: headerRows + (compact ? 9 : Math.max(10, Math.round(rows * 0.06))),
-    bottom: Math.floor(viewportHeight / cell) - 1 - (compact ? 14 : Math.max(14, Math.round(rows * 0.08))),
+    right: side + across - 1,
+    top: headerRows + Math.round(rows * (compact ? 0.06 : 0.12)),
+    bottom: Math.floor(viewportHeight / cell) - 1 - Math.round(rows * (compact ? 0.1 : 0.14)),
   }
   // The border, by inset from the outline: a solid edge, a floral band of
   // vines, flowers and leaves, then a solid inner line.
   const band = compact
-    ? { start: 3, end: 11, line: 13 }
-    : { start: 3, end: 13, line: 15 }
+    ? { start: 2, end: 9, line: 11 }
+    : { start: 2, end: 10, line: 12 }
   // The writing sits in the straight-sided middle of the piece, inside the
   // border and clear of the arches.
   const clear = band.line + 3
@@ -65,7 +67,7 @@ export function createGeometry(viewportWidth, viewportHeight) {
     top: frame.top + arch + clear,
     bottom: frame.bottom - arch - clear,
   }
-  const padX = compact ? 5 : 10
+  const padX = compact ? 4 : 6
   const padY = compact ? 3 : 4
 
   return {
@@ -563,9 +565,9 @@ function frameCells(geometry) {
     insideOutline(geometry, x, y, from) && !insideOutline(geometry, x, y, to + 1)
   for (let y = frame.top; y <= frame.bottom; y += 1) {
     for (let x = frame.left; x <= frame.right; x += 1) {
-      const edge = ring(x, y, 0, 1)
-      const line = ring(x, y, band.line, band.line + 1)
-      const dots = ring(x, y, band.line + 3, band.line + 3) && (x + y) % 3 === 0
+      const edge = ring(x, y, 0, 0)
+      const line = ring(x, y, band.line, band.line)
+      const dots = ring(x, y, band.line + 2, band.line + 2) && (x + y) % 2 === 0
       if (edge || line || dots) cells.push([x, y])
     }
   }
@@ -694,6 +696,17 @@ function rosette(size) {
   })
 }
 
+// Four round petals around an open eye, charted cell by cell.
+const QUATREFOIL = [
+  '.XX.XX.',
+  'XXXXXXX',
+  'XXX.XXX',
+  '.X...X.',
+  'XXX.XXX',
+  'XXXXXXX',
+  '.XX.XX.',
+].flatMap((row, y) => [...row].flatMap((mark, x) => (mark === 'X' ? [[x, y]] : [])))
+
 // A five-petalled flower with an open eye, as worked in filet roses.
 function flower(size) {
   return chart(size, size, (context) => {
@@ -782,8 +795,10 @@ function bandCells(geometry) {
   const { frame, band, notch, arch } = geometry
   const width = band.end - band.start + 1
   const centre = band.start + (width - 1) / 2
-  const bloom = width - 2
-  const blossom = flower(bloom)
+  // Small bands use a charted quatrefoil, which reads better than a
+  // rasterized flower at only a few cells across.
+  const bloom = width - 2 < 9 ? 7 : width - 2
+  const blossom = bloom === 7 ? QUATREFOIL : flower(bloom)
   const sprig = Math.max(5, Math.round(width * 0.75))
   const seen = new Set()
   const cells = []
@@ -818,7 +833,7 @@ function bandCells(geometry) {
     const middle = (side.from + side.to) / 2
 
     // The stem bows gently between flowers, first one way, then the other.
-    const bend = Math.max(1.5, width * 0.2)
+    const bend = width < 11 ? 0 : Math.max(1.5, width * 0.2)
     const wave = (u) => bend * Math.sin(((u - side.from) / step) * Math.PI)
     for (let u = side.from; u <= side.to; u += 0.25) {
       const [x, y] = side.at(u, wave(u))
@@ -848,7 +863,7 @@ function bandCells(geometry) {
   }
 
   // A flower spray tucked into the band at each corner notch.
-  const big = bloom + 2
+  const big = Math.max(9, bloom + 2)
   const rose = flower(big)
   for (const [cx, cy] of outlineCorners(geometry)) {
     const sx = cx < (frame.left + frame.right) / 2 ? 1 : -1
