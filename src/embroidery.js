@@ -44,11 +44,11 @@ export function createGeometry(viewportWidth, viewportHeight) {
   // (fallback punctuation, spacing, the caret) to match them.
   const em = 10
   const motif = compact ? 7 : 9
-  // How far the top and bottom arch and the sides bow out, and the size of
-  // the curls along the border.
-  const arch = compact ? 8 : 12
-  const sway = compact ? 4 : 6
-  const curl = compact ? 4 : 6
+  // A doily with scalloped edges: the depth of each scallop, the width of
+  // the floral band inside the edge, and how round the corners are.
+  const scallop = compact ? 3 : 4
+  const band = compact ? 12 : 18
+  const radius = compact ? 16 : 26
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
   const headerRows = Math.ceil(HEADER_HEIGHT / cell)
@@ -60,18 +60,18 @@ export function createGeometry(viewportWidth, viewportHeight) {
   const frame = {
     left: side,
     right: side + across - 1,
-    // The arch, the bow and the caption all sit above the piece's top, so
-    // leave room for them under the header.
-    top: headerRows + arch + Math.round(rows * (compact ? 0.2 : 0.12)),
+    // The bow and the caption sit above the piece's top, so leave room for
+    // them under the header.
+    top: headerRows + Math.round(rows * (compact ? 0.2 : 0.12)),
     bottom: Math.floor(viewportHeight / cell) - 1 - Math.round(rows * (compact ? 0.1 : 0.14)),
   }
-  // The writing sits inside the scroll border, clear of its curls.
-  const clear = Math.ceil(curl * 2) + 4
+  // The writing sits inside the band's inner rules.
+  const clear = scallop + band + (compact ? 4 : 6)
   const inner = {
-    left: frame.left + sway + clear,
-    right: frame.right - sway - clear,
-    top: frame.top + arch + clear,
-    bottom: frame.bottom - arch - clear,
+    left: frame.left + clear,
+    right: frame.right - clear,
+    top: frame.top + clear,
+    bottom: frame.bottom - clear,
   }
   const padX = compact ? 4 : 6
   const padY = compact ? 3 : 4
@@ -80,9 +80,9 @@ export function createGeometry(viewportWidth, viewportHeight) {
     cell,
     em,
     motif,
-    arch,
-    sway,
-    curl,
+    scallop,
+    band,
+    radius,
     cols,
     rows,
     frame,
@@ -580,125 +580,192 @@ const BOW = parseChart([
   '....X..X.........X..X....',
 ])
 
-const HEART = parseChart([
-  '..XXX...XXX..',
-  '.XXXXX.XXXXX.',
-  'XXXXXXXXXXXXX',
-  'XXXXXXXXXXXXX',
-  'XXXXXXXXXXXXX',
-  '.XXXXXXXXXXX.',
-  '..XXXXXXXXX..',
-  '...XXXXXXX...',
+// A filet rose, after an old pattern sheet: a cupped head of petals
+// worked solid with open lines between them, and a smaller bud for narrow
+// bands.
+const ROSE = parseChart([
   '....XXXXX....',
-  '.....XXX.....',
-  '......X......',
+  '..XXX...XXX..',
+  '.XX..XXX..XX.',
+  'XX..X...X..XX',
+  'X..X..X..X..X',
+  'X.X..XXX..X.X',
+  'X.X.XX.X.XX.X',
+  'X..X..XX..X.X',
+  'XX..XX..XX..X',
+  '.XX...XX...XX',
+  '..XXX....XXX.',
+  '....XXXXXX...',
 ])
 
-// The piece's outline: one thread scrolling around the writing, after a
-// filet frame chart. The top and bottom swell into rounded arches, the
-// sides bow outward, curls turn in along every edge, and a heart sits at
-// each corner.
-function scrollCells(geometry) {
-  const { frame, arch, sway, curl } = geometry
+const ROSEBUD = parseChart([
+  '..XXX..',
+  '.X...X.',
+  'X..X..X',
+  'X.XX.XX',
+  'X..X..X',
+  '.XX.XX.',
+  '..XXX..',
+])
+
+const LEAF = parseChart([
+  '.XXX.',
+  'XX.XX',
+  'X.X.X',
+  'XX.XX',
+  '.XXX.',
+])
+
+// Distance from a point to the piece's rounded outline (negative inside),
+// and how far around the outline its nearest point lies, measured from the
+// middle of the top edge within its quarter of the piece.
+function doilyFrame(geometry) {
+  const { frame, scallop, radius } = geometry
+  const cx = (frame.left + frame.right) / 2
+  const cy = (frame.top + frame.bottom) / 2
+  const a = (frame.right - frame.left) / 2 - scallop
+  const b = (frame.bottom - frame.top) / 2 - scallop
+  const r = Math.min(radius, a - 1, b - 1)
+  const w = a - r
+  const h = b - r
+  const quarter = w + (r * Math.PI) / 2 + h
+
+  const measure = (x, y) => {
+    const px = Math.abs(x - cx)
+    const py = Math.abs(y - cy)
+    const qx = px - w
+    const qy = py - h
+    let distance
+    let along
+    if (qx > 0 && qy > 0) {
+      distance = Math.hypot(qx, qy) - r
+      along = w + r * Math.atan2(qx, qy)
+    } else if (b - py < a - px) {
+      distance = py - b
+      along = Math.min(px, w)
+    } else {
+      distance = px - a
+      along = w + (r * Math.PI) / 2 + (h - Math.min(py, h))
+    }
+    return { distance, along }
+  }
+
+  // The point on the outline `along` its quarter, pushed `depth` inward,
+  // in each of the four quarters (mirrored so the piece is symmetric).
+  const pointsAt = (along, depth) => {
+    let x
+    let y
+    if (along <= w) {
+      x = along
+      y = b - depth
+    } else if (along <= w + (r * Math.PI) / 2) {
+      const angle = (along - w) / r
+      x = w + Math.sin(angle) * (r - depth)
+      y = h + Math.cos(angle) * (r - depth)
+    } else {
+      x = a - depth
+      y = h - (along - w - (r * Math.PI) / 2)
+    }
+    return [
+      [cx + x, cy - y],
+      [cx - x, cy - y],
+      [cx + x, cy + y],
+      [cx - x, cy + y],
+    ]
+  }
+
+  return { measure, pointsAt, quarter }
+}
+
+// The doily's border: a scalloped edge worked solid with a row of eyelets
+// inside it, a band of roses on a winding leafy vine, and a solid rule and
+// a dotted rule closing the band.
+function doilyCells(geometry) {
+  const { frame, scallop, band } = geometry
+  const { measure, pointsAt, quarter } = doilyFrame(geometry)
   const seen = new Set()
   const cells = []
-  const mark = (gx, gy) => {
+  const mark = (x, y) => {
+    const gx = Math.round(x)
+    const gy = Math.round(y)
     const key = `${gx},${gy}`
     if (seen.has(key)) return
     seen.add(key)
     cells.push([gx, gy])
   }
-  // The scrolling thread is worked two stitches wide so it reads as a
-  // cord rather than a dotted line.
-  const add = (x, y) => {
-    const gx = Math.round(x)
-    const gy = Math.round(y)
-    mark(gx, gy)
-    mark(gx + 1, gy)
-    mark(gx, gy + 1)
-    mark(gx + 1, gy + 1)
-  }
-  // Sample a curve finely so the thread reads as a continuous line of
-  // single stitches.
-  const trace = (point, length) => {
-    const steps = Math.max(8, Math.ceil(length * 3))
-    for (let i = 0; i <= steps; i += 1) add(...point(i / steps))
-  }
-  const stamp = (chart, cx, cy, flip = false) => {
-    const left = Math.round(cx - (chart.width - 1) / 2)
-    const top = Math.round(cy - (chart.height - 1) / 2)
-    for (const [x, y] of chart.cells) mark(left + x, top + (flip ? chart.height - 1 - y : y))
+
+  // Scallops: each quarter holds a whole number of them, so they meet
+  // evenly at the middle of every side.
+  const count = Math.max(2, Math.round(quarter / (scallop * 3.5)))
+  const scallopAt = (along) => scallop * Math.abs(Math.sin((Math.PI * along * count) / quarter))
+  const inBand = (x, y) => {
+    const { distance } = measure(x, y)
+    return distance < -2 && distance > -band + 1
   }
 
-  const left = frame.left + sway
-  const right = frame.right - sway
-  const top = frame.top + arch
-  const bottom = frame.bottom - arch
-  const middleX = (frame.left + frame.right) / 2
-  const middleY = (top + bottom) / 2
-  const width = right - left
-  const height = bottom - top
-
-  // Rounded arches over the top and under the bottom.
-  const archAt = (t) => arch * (1 - (2 * t - 1) ** 2)
-  trace((t) => [left + width * t, top - archAt(t)], width + arch * 2)
-  trace((t) => [left + width * t, bottom + archAt(t)], width + arch * 2)
-  // Sides bowing gently outward.
-  const bowAt = (t) => sway * (1 - (2 * t - 1) ** 2)
-  trace((t) => [left - bowAt(t), top + height * t], height + sway * 2)
-  trace((t) => [right + bowAt(t), top + height * t], height + sway * 2)
-
-  // A curl leaving the thread at (x, y) and winding inward, toward
-  // (nx, ny), clockwise or not.
-  const spiral = (x, y, nx, ny, clockwise) => {
-    const cx = x + nx * curl
-    const cy = y + ny * curl
-    const start = Math.atan2(y - cy, x - cx)
-    const turn = clockwise ? 1 : -1
-    const sweep = Math.PI * 1.7
-    trace((t) => {
-      const angle = start + turn * sweep * t
-      const radius = curl * (1 - t * 0.6)
-      return [cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius]
-    }, curl * 6)
-  }
-
-  // Curls along the top and bottom, a little in from each corner.
-  for (const t of [0.2, 0.8]) {
-    const x = left + width * t
-    const inward = t < 0.5
-    spiral(x, top - archAt(t), 0, 1, !inward)
-    spiral(x, bottom + archAt(t), 0, -1, inward)
-  }
-  // A pair of curls at the middle of each side, one turning up and one
-  // down, and more near the corners once the piece is tall enough.
-  const sideCurls = height > curl * 14 ? [0.5, 0.18, 0.82] : [0.5]
-  for (const t of sideCurls) {
-    const y = top + height * t
-    const pair = t === 0.5
-    for (const [x, nx] of [[left - bowAt(t), 1], [right + bowAt(t), -1]]) {
-      if (pair) {
-        spiral(x, y - 1, nx, -0.4, nx < 0)
-        spiral(x, y + 1, nx, 0.4, nx > 0)
-      } else {
-        spiral(x, y, nx, 0, (t < 0.5) === (nx > 0))
+  for (let y = frame.top - 1; y <= frame.bottom + 1; y += 1) {
+    for (let x = frame.left - 1; x <= frame.right + 1; x += 1) {
+      const { distance, along } = measure(x, y)
+      const edge = scallopAt(along)
+      // The scalloped edge, two stitches deep.
+      if (distance <= edge && distance > edge - 2) mark(x, y)
+      // Eyelets under each scallop, following its curve.
+      else if (distance <= edge - 3 && distance > edge - 4 && (x + y) % 2 === 0) {
+        if (edge > scallop * 0.35) mark(x, y)
       }
+      // A solid rule along the inside of the band, and a dotted rule
+      // inside that.
+      else if (distance <= -band && distance > -band - 2) mark(x, y)
+      else if (distance <= -band - 3 && distance > -band - 4 && (x + y) % 2 === 0) mark(x, y)
+      // A plain rule just inside the scallops, where the band starts.
+      else if (distance <= -1 && distance > -2) mark(x, y)
     }
   }
-  // A small double curl under the bottom arch, mirroring the bow on top.
-  spiral(middleX - 1, bottom + arch, 0, -1, false)
-  spiral(middleX + 1, bottom + arch, 0, -1, true)
 
-  // A heart at each corner, where the edges meet.
-  for (const [x, y, flip] of [
-    [left, top, false],
-    [right, top, false],
-    [left, bottom, true],
-    [right, bottom, true],
-  ]) {
-    const sx = x < middleX ? -1 : 1
-    const sy = y < middleY ? -1 : 1
-    stamp(HEART, x + sx * 3, y + sy * 3, flip)
+  // Roses spaced evenly around the band, one at each corner, with a leafy
+  // vine winding between them.
+  const middle = -band / 2 - 0.5
+  const rose = band >= 16 ? ROSE : ROSEBUD
+  const perQuarter = Math.max(2, Math.round(quarter / (rose.width * 2.6)))
+  const spacing = quarter / perQuarter
+  const roseAlong = Array.from({ length: perQuarter + 1 }, (_, i) => i * spacing)
+  const stamp = (chart, x, y, clip = true) => {
+    const left = Math.round(x - (chart.width - 1) / 2)
+    const top = Math.round(y - (chart.height - 1) / 2)
+    for (const [dx, dy] of chart.cells) {
+      if (!clip || inBand(left + dx, top + dy)) mark(left + dx, top + dy)
+    }
+  }
+  // A bud halfway between each pair of roses, when there's room.
+  const budAlong = rose === ROSE ? roseAlong.slice(1).map((at) => at - spacing / 2) : []
+  const clearOfRoses = (along) =>
+    roseAlong.every((at) => Math.abs(along - at) > rose.width * 0.62) &&
+    budAlong.every((at) => Math.abs(along - at) > ROSEBUD.width * 0.6)
+
+  // The vine: a thread waving from rose to bud to rose.
+  const sway = band >= 16 ? 2.5 : 1.5
+  const waves = budAlong.length ? 2 : 1
+  const waveAt = (along) => sway * Math.sin((Math.PI * 2 * waves * along) / spacing)
+  for (let along = 0; along <= quarter; along += 0.25) {
+    if (!clearOfRoses(along)) continue
+    for (const [x, y] of pointsAt(along, -middle + waveAt(along))) {
+      if (inBand(x, y)) mark(x, y)
+    }
+  }
+  // A leaf off each crest of the vine, on its outer side.
+  for (let i = 0; i < perQuarter; i += 1) {
+    for (let k = 0.25; k < waves * 2; k += 0.5) {
+      const along = (i + k / (waves * 2) * 1) * spacing
+      const swing = Math.sign(waveAt(along))
+      const depth = -middle + swing * (sway + LEAF.height / 2 + 0.5)
+      for (const [x, y] of pointsAt(along, depth)) stamp(LEAF, x, y)
+    }
+  }
+  for (const along of budAlong) {
+    for (const [x, y] of pointsAt(along, -middle)) stamp(ROSEBUD, x, y)
+  }
+  for (const along of roseAlong) {
+    for (const [x, y] of pointsAt(along, -middle)) stamp(rose, x, y, false)
   }
   return cells
 }
@@ -711,7 +778,7 @@ function ornamentCells(geometry) {
   // A ribbon bow tied over the top edge.
   const middle = (frame.left + frame.right) / 2
   const ribbon = BOW
-  const ribbonTop = frame.top - geometry.arch - ribbon.height + 2
+  const ribbonTop = frame.top - ribbon.height + geometry.scallop + 3
   for (const [x, y] of ribbon.cells) {
     cells.push([Math.round(middle - ribbon.width / 2) + x, ribbonTop + y])
   }
@@ -1127,7 +1194,7 @@ export class LaceRenderer {
     const ornamentKey = `${pieceGeometry.frame.bottom}`
     if (ornamentKey !== this.ornamentKey) {
       this.ornaments = [
-        ...scrollCells(pieceGeometry),
+        ...doilyCells(pieceGeometry),
         ...ornamentCells(pieceGeometry),
       ]
       this.ornamentKey = ornamentKey
