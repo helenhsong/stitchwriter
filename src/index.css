@@ -188,43 +188,6 @@ body {
   pointer-events: none;
 }
 
-.stitch-controls {
-  display: flex;
-  width: min(760px, calc(100vw - 40px));
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 15px 4px 0;
-  color: #b9856d;
-  font: 400 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  letter-spacing: 0.03em;
-}
-
-.stitch-controls p {
-  margin: 0;
-}
-
-.stitch-controls button {
-  appearance: none;
-  padding: 2px 0;
-  border: 0;
-  border-bottom: 1px solid currentcolor;
-  color: #d8a38a;
-  font: inherit;
-  background: transparent;
-  cursor: pointer;
-}
-
-.stitch-controls button:hover,
-.stitch-controls button:focus-visible {
-  color: #fff0dc;
-}
-
-.stitch-controls button:focus-visible {
-  outline: 1px solid currentcolor;
-  outline-offset: 5px;
-}
-
 .stitch-loader {
   display: grid;
   width: min(760px, calc(100vw - 40px));
@@ -292,7 +255,6 @@ body {
   }
 
   .cloth-motion,
-  .stitch-controls,
   .stitch-loader {
     width: min(760px, calc(100vw - 24px));
   }

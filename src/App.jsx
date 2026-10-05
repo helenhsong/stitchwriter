@@ -187,11 +187,6 @@ function App() {
   }, [focused, layout.height, reducedMotion, text])
 
   const focusInput = () => inputRef.current?.focus({ preventScroll: true })
-  const clearText = () => {
-    setText('')
-    requestAnimationFrame(focusInput)
-  }
-
   return (
     <>
       <ProjectHeader readme={readme} />
@@ -254,14 +249,6 @@ function App() {
                     />
                   )}
                 </div>
-              </div>
-              <div className="stitch-controls">
-                <p>click the cloth and type · paste works too</p>
-                {text && (
-                  <button type="button" onClick={clearText}>
-                    unpick all
-                  </button>
-                )}
               </div>
             </>
           )}
