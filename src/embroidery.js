@@ -625,8 +625,8 @@ function rosette(size) {
   })
 }
 
-// Hand-charted filet motifs, in the style of a filet pattern sheet: roses,
-// buds, butterflies, hearts and a ribbon bow. X is a filled block.
+// Hand-charted filet motifs, in the style of a filet pattern sheet: a
+// rose, a star flower, a heart and a ribbon bow. X is a filled block.
 function parseChart(rows) {
   const width = Math.max(...rows.map((row) => row.length))
   const cells = rows.flatMap((row, y) =>
@@ -636,62 +636,27 @@ function parseChart(rows) {
 }
 
 const ROSE = parseChart([
-  '...XXXXXXX...',
-  '.XXXXX.XXXXX.',
-  '.XXX.XXX.XXX.',
-  'XXX.XX.XX.XXX',
-  'XX.XX.X.XX.XX',
-  'XX.X.XXX.X.XX',
-  'XXX.X...X.XXX',
-  'XX.XXX.XXX.XX',
-  'XXX..XXX..XXX',
+  '....XXXXX....',
+  '..XXXXXXXXX..',
   '.XXX.....XXX.',
-  '.XXXXX.XXXXX.',
+  '.XX.XXXXX.XX.',
+  'XX.XX...XX.XX',
+  'XX.X.XXX.X.XX',
+  'XX.X.X.X.X.XX',
+  'XX.XX..X.X.XX',
+  '.XX.XXX.XX.X.',
+  '.XXX...XX.XX.',
+  '..XXXXX..XX..',
   '...XXXXXXX...',
-  '.....X.X.....',
+  '.....XXX.....',
 ])
 
-const BUD = parseChart([
-  '...XXX...',
-  '..XX.XX..',
-  '.XX.X.XX.',
-  '.X.XXX.X.',
-  '.XX...XX.',
-  '..XXXXX..',
-  '....X....',
-  'XX..X..XX',
-  'XXX.X.XXX',
-  '.XXXXXXX.',
-  '....X....',
-])
-
-const BUTTERFLY = parseChart([
-  '.XXX.......XXX.',
-  'XX.XX.X.X.XX.XX',
-  'X...XX.X.XX...X',
-  'X.X..XXXXX..X.X',
-  'X....XXXXX....X',
-  '.XXXX.XXX.XXXX.',
-  '..XX..XXX..XX..',
-  '.XX.X.XXX.X.XX.',
-  '.X...X.X.X...X.',
-  '.XX.XX...XX.XX.',
-  '..XXX.....XXX..',
-])
-
-const SPRIG = parseChart([
-  '.XX......',
-  'XXXX..XX.',
-  'XXXXXXXXX',
-  '.XX.XXXX.',
-  '.....XX..',
-])
-
-const HEART = parseChart([
-  '.XX.XX.',
-  'XXXXXXX',
-  'XXXXXXX',
-  '.XXXXX.',
+const STAR_FLOWER = parseChart([
+  '...X...',
+  '..XXX..',
+  '.X.X.X.',
+  'XXX.XXX',
+  '.X.X.X.',
   '..XXX..',
   '...X...',
 ])
@@ -724,14 +689,31 @@ const BOW = parseChart([
   '....X..X.........X..X....',
 ])
 
-const mirror = (chart) => ({
-  ...chart,
-  cells: chart.cells.map(([x, y]) => [chart.width - 1 - x, y]),
-})
+// One repeat of the border's running pattern, charted like a folk filet
+// border: a tulip on a stem with curling leaves, a small diamond between
+// tulips, a solid rule and a row of picots. Rows run from the outer edge
+// of the band (0) inward.
+const BORDER_REPEAT = parseChart([
+  '........X.......',
+  '.......XXX......',
+  'X...X..XXX..X...',
+  'XX.XX.XXXXX.XX.X',
+  'X..XXX.XXX.XXX..',
+  '...XXXX.X.XXXX..',
+  '....XXXX.XXXX...',
+  '.....XXXXXXX....',
+  '......XXXXX.....',
+  '.X......X......X',
+  '.XX.....X.....XX',
+  '..XX...XXX...XX.',
+  '...XXXXX.XXXXX..',
+  'XXXXXXXXXXXXXXXX',
+  'X.X.X.X.X.X.X.X.',
+])
 
-// The motif band inside the border: roses in the corners, and along each
-// side a procession of rosebuds and butterflies with leafy sprigs between
-// them. Everything is clipped to the band.
+// The motif band inside the border: the running tulip pattern along every
+// side, following the arches, with a rose at each corner. Everything is
+// clipped to the band.
 function bandCells(geometry) {
   const { frame, band, notch, arch } = geometry
   const width = band.end - band.start + 1
@@ -751,37 +733,33 @@ function bandCells(geometry) {
     for (const [dx, dy] of chart.cells) add(left + dx, top + dy)
   }
 
-  // Each side, in coordinates along it (u); vertical sides get sideways
-  // sprigs.
-  const corner = notch + band.end + 4
+  // Each side, as a position along it (u) and a depth into the band from
+  // its outer edge (v). The pattern grows outward from the inner rule.
+  const offset = Math.max(0, Math.round((width - BORDER_REPEAT.height) / 2))
+  const corner = notch + band.end + 2
   const sides = [
-    { from: frame.left + corner, to: frame.right - corner, at: (u) => [u, frame.top + archOffset(geometry, u) + centre], upright: false },
-    { from: frame.left + corner, to: frame.right - corner, at: (u) => [u, frame.bottom - archOffset(geometry, u) - centre], upright: false },
-    { from: frame.top + arch + corner, to: frame.bottom - arch - corner, at: (u) => [frame.left + centre, u], upright: true },
-    { from: frame.top + arch + corner, to: frame.bottom - arch - corner, at: (u) => [frame.right - centre, u], upright: true },
+    { from: frame.left + corner, to: frame.right - corner, at: (u, v) => [u, Math.round(frame.top + archOffset(geometry, u)) + band.start + v] },
+    { from: frame.left + corner, to: frame.right - corner, at: (u, v) => [u, Math.round(frame.bottom - archOffset(geometry, u)) - band.start - v] },
+    { from: frame.top + arch + corner, to: frame.bottom - arch - corner, at: (u, v) => [frame.left + band.start + v, u] },
+    { from: frame.top + arch + corner, to: frame.bottom - arch - corner, at: (u, v) => [frame.right - band.start - v, u] },
   ]
-  const spacing = 26
+  const columns = Array.from({ length: BORDER_REPEAT.width }, () => [])
+  for (const [x, y] of BORDER_REPEAT.cells) columns[x].push(y)
+  const period = BORDER_REPEAT.width
   for (const side of sides) {
-    const length = side.to - side.from
-    if (length < spacing) continue
-    const count = Math.max(1, Math.round(length / spacing))
-    const step = length / count
-    const middle = (side.from + side.to) / 2
-    for (let k = 0; k <= count; k += 1) {
-      const u = side.from + k * step
-      const [x, y] = side.at(u)
-      // Symmetric about the middle of each side.
-      const fromMiddle = Math.round(Math.abs(u - middle) / step)
-      stamp(fromMiddle % 2 === 0 ? BUTTERFLY : BUD, x, y)
-      if (k === count) break
-      const base = u + step / 2
-      const [sx, sy] = side.at(base)
-      // Leafy sprigs along the top and bottom, little hearts up the sides.
-      stamp(side.upright ? TINY_HEART : base < middle ? SPRIG : mirror(SPRIG), sx, sy)
+    // Centre a tulip on the middle of each side so the pattern is
+    // symmetric.
+    const middle = Math.round((side.from + side.to) / 2)
+    for (let u = side.from; u <= side.to; u += 1) {
+      const column = (((u - middle + 8) % period) + period) % period
+      for (const y of columns[column]) {
+        const [x, gy] = side.at(u, y + offset)
+        add(x, gy)
+      }
     }
   }
 
-  // A rose tucked into the band at each corner notch.
+  // A rose tucked into the band at each corner.
   for (const [cx, cy] of outlineCorners(geometry)) {
     const sx = cx < (frame.left + frame.right) / 2 ? 1 : -1
     const sy = cy < (frame.top + frame.bottom) / 2 ? 1 : -1
@@ -804,16 +782,16 @@ function ornamentCells(geometry) {
   // A motif sits in each corner notch, outside the border.
   const [topLeft, topRight, bottomLeft, bottomRight] = outlineCorners(geometry)
   const chartAt = (chart, cx, cy) => place(chart.cells, chart.width, cx, cy)
-  chartAt(HEART, topLeft[0] + 1, topLeft[1] - 1)
-  chartAt(HEART, topRight[0], topRight[1] - 1)
-  chartAt(BUD, bottomLeft[0] + 1, bottomLeft[1] + 1)
-  chartAt(BUD, bottomRight[0], bottomRight[1] + 1)
+  chartAt(STAR_FLOWER, topLeft[0] + 1, topLeft[1] - 1)
+  chartAt(STAR_FLOWER, topRight[0], topRight[1] - 1)
+  chartAt(STAR_FLOWER, bottomLeft[0] + 1, bottomLeft[1] + 1)
+  chartAt(STAR_FLOWER, bottomRight[0], bottomRight[1] + 1)
 
   // Small motifs nested in the top and bottom arches, inside the border.
   const middle = (frame.left + frame.right) / 2
   const small = Math.max(5, arch - 2)
   const below = geometry.band.line + 5
-  place(HEART.cells, HEART.width, middle, frame.top + below + HEART.height / 2)
+  place(STAR_FLOWER.cells, STAR_FLOWER.width, middle, frame.top + below + STAR_FLOWER.height / 2)
   place(rosette(small + 1), small + 1, middle, frame.bottom - below - (small + 1) / 2)
 
   // A ribbon bow tied over the top arch.
