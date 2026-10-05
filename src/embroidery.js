@@ -42,18 +42,20 @@ export function createGeometry(viewportWidth, viewportHeight) {
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
   const headerRows = Math.ceil(HEADER_HEIGHT / cell)
-  const side = compact ? 6 : 10
+  // Plenty of open lace all round the piece, so it sits on the fabric
+  // like a centrepiece rather than filling it.
+  const side = compact ? 11 : Math.max(16, Math.round(cols * 0.08))
   const frame = {
     left: side,
     right: Math.floor(viewportWidth / cell) - 1 - side,
-    top: headerRows + 2,
-    bottom: Math.floor(viewportHeight / cell) - 1 - (compact ? 7 : 9),
+    top: headerRows + (compact ? 9 : Math.max(10, Math.round(rows * 0.06))),
+    bottom: Math.floor(viewportHeight / cell) - 1 - (compact ? 14 : Math.max(14, Math.round(rows * 0.08))),
   }
   // The border, by inset from the outline: a solid edge, a floral band of
   // vines, flowers and leaves, then a solid inner line.
   const band = compact
     ? { start: 3, end: 11, line: 13 }
-    : { start: 3, end: 15, line: 17 }
+    : { start: 3, end: 13, line: 15 }
   // The writing sits in the straight-sided middle of the piece, inside the
   // border and clear of the arches.
   const clear = band.line + 3
