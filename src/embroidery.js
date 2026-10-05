@@ -47,8 +47,10 @@ export function createGeometry(viewportWidth, viewportHeight) {
   // A doily with scalloped edges: the depth of each scallop, the width of
   // the floral band inside the edge, and how round the corners are.
   const scallop = compact ? 3 : 4
-  const band = compact ? 12 : 18
-  const radius = compact ? 16 : 26
+  const band = compact ? 8 : 10
+  const radius = compact ? 14 : 20
+  // A dome rising from the middle of the top edge, under the bow.
+  const dome = compact ? 7 : 10
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
   const headerRows = Math.ceil(HEADER_HEIGHT / cell)
@@ -66,11 +68,11 @@ export function createGeometry(viewportWidth, viewportHeight) {
     bottom: Math.floor(viewportHeight / cell) - 1 - Math.round(rows * (compact ? 0.1 : 0.14)),
   }
   // The writing sits inside the band's inner rules.
-  const clear = scallop + band + (compact ? 4 : 6)
+  const clear = scallop + band + (compact ? 4 : 5)
   const inner = {
     left: frame.left + clear,
     right: frame.right - clear,
-    top: frame.top + clear,
+    top: frame.top + dome + clear,
     bottom: frame.bottom - clear,
   }
   const padX = compact ? 4 : 6
@@ -83,6 +85,7 @@ export function createGeometry(viewportWidth, viewportHeight) {
     scallop,
     band,
     radius,
+    dome,
     cols,
     rows,
     frame,
@@ -612,28 +615,37 @@ const LEAF = parseChart([
 // and how far around the outline its nearest point lies, measured from the
 // middle of the top edge within its quarter of the piece.
 function doilyFrame(geometry) {
-  const { frame, scallop, radius } = geometry
+  const { frame, scallop, radius, dome } = geometry
+  // The body of the piece sits below the dome.
   const cx = (frame.left + frame.right) / 2
-  const cy = (frame.top + frame.bottom) / 2
+  const cy = (frame.top + dome + frame.bottom) / 2
   const a = (frame.right - frame.left) / 2 - scallop
-  const b = (frame.bottom - frame.top) / 2 - scallop
+  const b = (frame.bottom - frame.top - dome) / 2 - scallop
   const r = Math.min(radius, a - 1, b - 1)
   const w = a - r
   const h = b - r
   const quarter = w + (r * Math.PI) / 2 + h
+  // How far the dome lifts the top edge at a distance px from the middle.
+  const span = Math.min(w, a * 0.42)
+  const domeAt = (px) => (px >= span ? 0 : (dome * (Math.cos((Math.PI * px) / span) + 1)) / 2)
 
   const measure = (x, y) => {
     const px = Math.abs(x - cx)
     const py = Math.abs(y - cy)
     const qx = px - w
     const qy = py - h
+    const top = y < cy ? b + domeAt(px) : b
     let distance
     let along
     if (qx > 0 && qy > 0) {
       distance = Math.hypot(qx, qy) - r
       along = w + r * Math.atan2(qx, qy)
-    } else if (b - py < a - px) {
-      distance = py - b
+    } else if (top - py < a - px) {
+      // Across the dome the edge rises steeply, so measure square to it.
+      const slope = y < cy && px < span
+        ? ((dome * Math.PI) / (2 * span)) * Math.sin((Math.PI * px) / span)
+        : 0
+      distance = (py - top) / Math.hypot(1, slope)
       along = Math.min(px, w)
     } else {
       distance = px - a
@@ -658,9 +670,10 @@ function doilyFrame(geometry) {
       x = a - depth
       y = h - (along - w - (r * Math.PI) / 2)
     }
+    const lift = along <= w ? domeAt(x) : 0
     return [
-      [cx + x, cy - y],
-      [cx - x, cy - y],
+      [cx + x, cy - y - lift],
+      [cx - x, cy - y - lift],
       [cx + x, cy + y],
       [cx - x, cy + y],
     ]
@@ -735,7 +748,7 @@ function doilyCells(geometry) {
     budAlong.every((at) => Math.abs(along - at) > ROSEBUD.width * 0.6)
 
   // The vine: a thread waving from rose to bud to rose.
-  const sway = band >= 16 ? 2.5 : 1.5
+  const sway = band >= 16 ? 2.5 : 1
   const waves = budAlong.length ? 2 : 1
   const waveAt = (along) => sway * Math.sin((Math.PI * 2 * waves * along) / spacing)
   for (let along = 0; along <= quarter; along += 0.25) {
@@ -744,8 +757,9 @@ function doilyCells(geometry) {
       if (inBand(x, y)) mark(x, y)
     }
   }
-  // A leaf off each crest of the vine, on its outer side.
-  for (let i = 0; i < perQuarter; i += 1) {
+  // A leaf off each crest of the vine, on its outer side, where the band
+  // is wide enough to hold them.
+  for (let i = 0; i < (band >= 16 ? perQuarter : 0); i += 1) {
     for (let k = 0.25; k < waves * 2; k += 0.5) {
       const along = (i + k / (waves * 2) * 1) * spacing
       const swing = Math.sign(waveAt(along))
@@ -817,42 +831,29 @@ function soften(layer, amount) {
   context.restore()
 }
 
-// The header links' lettering, charted in a sturdy monospace so it stays
-// legible at a few stitches tall.
-const BUTTON_FACE = {
-  style: 'bold',
-  family: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-  thicken: 0.1,
-}
+// The header links' lettering, embroidered finely in black thread.
+const BUTTON_FONT = '600 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
 
-// A fabric button for each header link: its label charted to cells and a
-// rounded patch of solid stitches around it, centred on the link.
+// A slim fabric button for each header link, worked into the lace and
+// centred on the link.
 function labelButtons(geometry) {
   const { cell, cols } = geometry
-  const em = 9
+  const measure = getMeasureContext(10)
+  measure.font = BUTTON_FONT
   return Array.from(document.querySelectorAll('.ph-project-header a')).map(
     (link) => {
       link.style.padding = ''
       link.style.margin = ''
       const bounds = link.getBoundingClientRect()
-      const glyphs = Array.from(link.textContent.trim()).map((character) =>
-        getGlyph(character, em, BUTTON_FACE),
-      )
-      const textWidth = Math.round(glyphs.reduce((sum, glyph) => sum + glyph.advance, 0))
-      const width = textWidth + 8
-      const height = Math.round(em * 1.1) + 6
+      const label = link.textContent.trim()
+      const textWidth = measure.measureText(label).width
+      const width = Math.ceil((textWidth + 18) / cell)
+      const height = Math.ceil(22 / cell)
       const centreX = Math.round((bounds.left + bounds.right) / 2 / cell)
       const centreY = Math.round((bounds.top + bounds.bottom) / 2 / cell)
       // Kept clear of the edges of the screen.
       const left = clamp(centreX - Math.floor(width / 2), 2, cols - width - 3)
       const top = centreY - Math.floor(height / 2)
-      const letters = new Set()
-      let x = left + 4
-      const baseline = top + 3 + Math.round(em * 0.8)
-      for (const glyph of glyphs) {
-        for (const [dx, dy] of glyph.cells) letters.add(`${Math.round(x) + dx},${baseline + dy}`)
-        x += glyph.advance
-      }
       // Grow the link to cover its button, without moving anything around
       // it, so the whole button can be clicked.
       const padLeft = Math.max(0, bounds.left - left * cell)
@@ -860,7 +861,7 @@ function labelButtons(geometry) {
       const padY = Math.max(0, (height * cell - bounds.height) / 2)
       link.style.padding = `${padY}px ${padRight}px ${padY}px ${padLeft}px`
       link.style.margin = `${-padY}px ${-padRight}px ${-padY}px ${-padLeft}px`
-      return { left, top, right: left + width - 1, bottom: top + height - 1, letters }
+      return { label, left, top, right: left + width - 1, bottom: top + height - 1 }
     },
   )
 }
@@ -1134,10 +1135,9 @@ export class LaceRenderer {
 
   // The fixed layers: the velvet ground stays put behind the lace, the open
   // mesh is one repeating strip that slides as the page scrolls, and the
-  // header links get holes cut in the lace above everything else.
+  // header links sit on fabric buttons above everything else.
   paintBase() {
     const { geometry } = this
-    const { cell, lineWidth } = geometry
     paintVelvet(this.velvetLayer.context, this.width, this.height)
     paintMesh(this.meshLayer.context, {
       ...geometry,
@@ -1145,38 +1145,48 @@ export class LaceRenderer {
     })
     soften(this.meshLayer, this.ratio * 0.3)
 
-    // A white fabric button under each header link, its label stitched in
-    // black: the button is worked solid, with the letters and a running
-    // stitch just inside its edge left open to the dark ground.
+    // A slim white button worked solid into the lace under each header
+    // link, its label embroidered over it in black satin stitch.
     const { context } = this.holesLayer
-    for (const button of labelButtons(geometry)) {
-      const { left, top, right, bottom, letters } = button
-      context.save()
-      context.beginPath()
-      context.rect(
-        (left - 1) * cell + lineWidth,
-        (top - 1) * cell + lineWidth,
-        (right - left + 3) * cell,
-        (bottom - top + 3) * cell,
-      )
-      context.clip()
-      paintVelvet(context, this.width, this.height)
-      context.restore()
+    const buttons = labelButtons(geometry)
+    for (const { left, top, right, bottom } of buttons) {
       for (let y = top; y <= bottom; y += 1) {
         for (let x = left; x <= right; x += 1) {
-          const edgeX = Math.min(x - left, right - x)
-          const edgeY = Math.min(y - top, bottom - y)
-          // Rounded corners.
-          if (edgeX + edgeY < 2) continue
-          // A running stitch around the button, one stitch in.
-          const seam = (edgeX === 1 && edgeY >= 1) || (edgeY === 1 && edgeX >= 1)
-          if (seam && edgeX + edgeY > 2 && (x + y) % 2 === 0) continue
-          if (letters.has(`${x},${y}`)) continue
+          // Round off the corners.
+          if (Math.min(x - left, right - x) + Math.min(y - top, bottom - y) === 0) continue
           this.drawBlock(context, x, y)
         }
       }
     }
     soften(this.holesLayer, this.ratio * 0.45)
+    for (const button of buttons) this.embroiderLabel(context, button)
+  }
+
+  // Embroider a button's label: dark thread lettering crossed by fine
+  // slanted satin stitches that catch the light.
+  embroiderLabel(context, { label, left, top, right, bottom }) {
+    const { cell } = this.geometry
+    const { canvas: stitch, context: thread } = makeCanvas(this.width, this.height, this.ratio)
+    const x = ((left + right + 1) / 2) * cell + this.geometry.lineWidth / 2
+    const y = ((top + bottom + 1) / 2) * cell + this.geometry.lineWidth / 2
+    thread.font = BUTTON_FONT
+    thread.textAlign = 'center'
+    thread.textBaseline = 'middle'
+    thread.fillStyle = '#161615'
+    thread.fillText(label, x, y + 0.5)
+    thread.globalCompositeOperation = 'source-atop'
+    thread.strokeStyle = 'rgba(120, 120, 116, 0.55)'
+    thread.lineWidth = 0.5
+    thread.beginPath()
+    for (let sx = left * cell - 20; sx < (right + 1) * cell + 20; sx += 1.6) {
+      thread.moveTo(sx, top * cell)
+      thread.lineTo(sx + 6, (bottom + 1) * cell)
+    }
+    thread.stroke()
+    context.save()
+    context.setTransform(1, 0, 0, 1, 0, 0)
+    context.drawImage(stitch, 0, 0)
+    context.restore()
   }
 
   // Map a text cell to document grid coordinates.
