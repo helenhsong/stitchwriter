@@ -2,6 +2,8 @@
 // and text is "stitched" by filling cells solid, the way filet crochet
 // pictures are worked.
 
+import { CHARTED_SCRIPT, SPACE_ADVANCE } from './chartedScript.js'
+
 export const STITCH_FONT = '"Playfair Display", Georgia, serif'
 export const STITCH_FONT_STYLE = 'italic 400'
 export const HEADER_HEIGHT = 66
@@ -38,7 +40,9 @@ export function createGeometry(viewportWidth, viewportHeight) {
   const compact = viewportWidth < 560
   // A fine mesh, like thread-weight filet lace: more, smaller cells.
   const cell = compact ? 2.5 : clamp(Math.round(viewportWidth / 480), 3, 4)
-  const em = compact ? 15 : 16
+  // Letters are charted at one stitch per cell; em sizes everything else
+  // (fallback punctuation, spacing, the caret) to match them.
+  const em = 10
   const motif = compact ? 7 : 9
   const arch = compact ? 5 : 7
   const notch = compact ? 6 : 8
@@ -85,7 +89,7 @@ export function createGeometry(viewportWidth, viewportHeight) {
     frame,
     inner,
     lineWidth: Math.max(0.8, cell * 0.22),
-    lineHeight: Math.round(em * 1.3),
+    lineHeight: Math.round(em * 1.4),
     baselineOffset: em,
     textLeft: inner.left + padX,
     textCols: Math.max(10, inner.right - inner.left + 1 - padX * 2),
@@ -114,6 +118,17 @@ export function getGlyph(character, em, face) {
   const cacheKey = `${em}:${face?.family ?? ''}:${character}`
   const cached = glyphCache.get(cacheKey)
   if (cached) return cached
+
+  // Letters come from the charted script alphabet, worked row by row.
+  const charted = !face && CHARTED_SCRIPT.get(character)
+  if (charted) {
+    const cells = charted.rows
+      .filter((row) => row.length)
+      .flatMap((row, index) => (index % 2 ? [...row].reverse() : row))
+    const glyph = { cells, advance: charted.advance }
+    glyphCache.set(cacheKey, glyph)
+    return glyph
+  }
 
   const measure = getMeasureContext(em, face)
   const advance = measure.measureText(character).width / SUBSAMPLE
@@ -167,7 +182,7 @@ export function getGlyph(character, em, face) {
 // edge; lines are counted from the text area's top.
 export function layoutText(text, geometry) {
   const { em, textCols } = geometry
-  const spaceAdvance = getGlyph(' ', em).advance
+  const spaceAdvance = SPACE_ADVANCE
   const characters = Array.from(text)
   const placed = []
   let line = 0
