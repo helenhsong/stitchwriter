@@ -934,7 +934,7 @@ function ornamentCells(geometry) {
 }
 
 const CAPTION = 'type anything you want'
-const CAPTION_EM = 14
+const CAPTION_EM = 13
 // A sturdier italic than the writing's, so the small letters survive
 // being charted to so few cells.
 const CAPTION_FACE = { style: 'italic 400', family: 'Georgia, "Times New Roman", serif' }
