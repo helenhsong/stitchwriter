@@ -1,20 +1,17 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ProjectHeader } from '@helenhsong/ui'
 import '@helenhsong/ui/style.css'
-import '@fontsource/cormorant-garamond/latin-600.css'
+import '@fontsource/cormorant-garamond/latin-700-italic.css'
 import readme from '../README.md?raw'
 import {
+  LaceRenderer,
   STITCH_FONT,
-  createEmbroideryLayout,
-  drawEmbroidery,
-  rasterizeStitches,
+  STITCH_FONT_STYLE,
+  createGeometry,
+  layoutText,
 } from './embroidery.js'
+
+const PLACEHOLDER = 'Type anything…'
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false)
@@ -30,16 +27,20 @@ function useReducedMotion() {
   return reduced
 }
 
-function useViewportHeight() {
-  const [height, setHeight] = useState(() => window.innerHeight)
+function useViewport() {
+  const [size, setSize] = useState(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }))
 
   useEffect(() => {
-    const update = () => setHeight(window.innerHeight)
+    const update = () =>
+      setSize({ width: window.innerWidth, height: window.innerHeight })
     window.addEventListener('resize', update)
     return () => window.removeEventListener('resize', update)
   }, [])
 
-  return height
+  return size
 }
 
 function useFontReady() {
@@ -48,7 +49,9 @@ function useFontReady() {
   useEffect(() => {
     let active = true
     const timeout = new Promise((resolve) => window.setTimeout(resolve, 1800))
-    const fontLoad = document.fonts?.load(`600 72px ${STITCH_FONT}`) ?? Promise.resolve()
+    const fontLoad =
+      document.fonts?.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`) ??
+      Promise.resolve()
 
     Promise.race([fontLoad, timeout]).then(() => {
       if (active) setReady(true)
@@ -62,197 +65,202 @@ function useFontReady() {
   return ready
 }
 
+// ProjectHeader marks <html data-ph-open> while its README panel is showing.
+function useReadmeOpen() {
+  const [open, setOpen] = useState(() =>
+    document.documentElement.hasAttribute('data-ph-open'),
+  )
+
+  useEffect(() => {
+    const root = document.documentElement
+    const update = () => setOpen(root.hasAttribute('data-ph-open'))
+    const observer = new MutationObserver(update)
+    observer.observe(root, { attributes: true, attributeFilter: ['data-ph-open'] })
+    update()
+    return () => observer.disconnect()
+  }, [])
+
+  return open
+}
+
 function App() {
   const [text, setText] = useState('')
   const [focused, setFocused] = useState(false)
-  const [clothWidth, setClothWidth] = useState(720)
+  const [scrollRows, setScrollRows] = useState(0)
   const canvasRef = useRef(null)
-  const clothRef = useRef(null)
-  const motionRef = useRef(null)
+  const rendererRef = useRef(null)
   const inputRef = useRef(null)
-  const caretRef = useRef(null)
-  const previousStitchesRef = useRef([])
-  const previousTextRef = useRef(null)
+  const birthsRef = useRef([])
+  const previousTextRef = useRef('')
+  const sceneRef = useRef(null)
   const fontReady = useFontReady()
   const reducedMotion = useReducedMotion()
-  const viewportHeight = useViewportHeight()
+  const viewport = useViewport()
+  const readmeOpen = useReadmeOpen()
+
+  const geometry = useMemo(
+    () => createGeometry(viewport.width, viewport.height),
+    [viewport.width, viewport.height],
+  )
+  const placeholder = !text
+  const layout = useMemo(
+    () => (fontReady ? layoutText(text || PLACEHOLDER, geometry) : null),
+    [fontReady, geometry, text],
+  )
+  const overflowRows = layout
+    ? Math.max(0, layout.height - geometry.visibleTextRows)
+    : 0
+  const documentHeight = viewport.height + overflowRows * geometry.cell
+
+  // Schedule newly typed characters to be stitched one after another.
+  useLayoutEffect(() => {
+    if (!layout) return
+    const previous = Array.from(previousTextRef.current)
+    const next = Array.from(text)
+    let common = 0
+    while (
+      common < previous.length &&
+      common < next.length &&
+      previous[common] === next[common]
+    ) {
+      common += 1
+    }
+
+    const births = birthsRef.current.slice(0, common)
+    const added = next.length - common
+    const now = performance.now()
+    const bulk = added > 6
+    const spacing = bulk ? Math.min(60, 1100 / added) : 150
+    let lastBirth = births.reduce(
+      (latest, birth) => (birth === undefined ? latest : Math.max(latest, birth)),
+      -Infinity,
+    )
+
+    for (let index = common; index < next.length; index += 1) {
+      const character = next[index]
+      if (reducedMotion || /\s/.test(character)) {
+        births[index] = reducedMotion ? -Infinity : undefined
+        continue
+      }
+      // Pastes are stitched quickly; fast typing catches up gradually.
+      const backlog = Math.max(0, lastBirth - now)
+      const gap = bulk ? spacing : Math.max(20, spacing - backlog * 0.5)
+      const birth = Math.max(now, lastBirth + gap)
+      births[index] = birth
+      lastBirth = birth
+    }
+
+    birthsRef.current = births
+    previousTextRef.current = text
+  }, [layout, reducedMotion, text])
+
+  useEffect(() => {
+    const update = () => setScrollRows(Math.floor(window.scrollY / geometry.cell))
+    update()
+    window.addEventListener('scroll', update, { passive: true })
+    return () => window.removeEventListener('scroll', update)
+  }, [geometry.cell])
 
   useLayoutEffect(() => {
-    if (!fontReady || !clothRef.current) return undefined
-
-    const update = () => setClothWidth(clothRef.current.clientWidth)
-    const observer = new ResizeObserver(update)
-    update()
-    observer.observe(clothRef.current)
-    return () => observer.disconnect()
-  }, [fontReady])
-
-  const minimumHeight = Math.max(640, viewportHeight - 126)
-  const layout = useMemo(
-    () =>
-      createEmbroideryLayout(fontReady ? text : '', clothWidth, minimumHeight),
-    [clothWidth, fontReady, minimumHeight, text],
-  )
-  const stitches = useMemo(
-    () => (fontReady ? rasterizeStitches(layout) : []),
-    [fontReady, layout],
-  )
+    sceneRef.current = layout
+      ? {
+          layout,
+          scrollRows: Math.min(scrollRows, overflowRows),
+          births: birthsRef.current,
+          placeholder,
+          focused,
+          reducedMotion,
+        }
+      : null
+  }, [focused, layout, overflowRows, placeholder, reducedMotion, scrollRows])
 
   useEffect(() => {
-    if (!fontReady || !canvasRef.current) return undefined
+    if (!fontReady || readmeOpen || !canvasRef.current) return undefined
+    const renderer = new LaceRenderer(canvasRef.current)
+    renderer.resize(viewport.width, viewport.height, geometry)
+    rendererRef.current = renderer
+  }, [fontReady, geometry, readmeOpen, viewport.height, viewport.width])
 
-    let animationFrame
-    const textChanged = previousTextRef.current !== text
-    const previousKeys = textChanged
-      ? new Set(previousStitchesRef.current.map((stitch) => stitch.key))
-      : new Set(stitches.map((stitch) => stitch.key))
-    const startedAt = performance.now()
+  useEffect(() => {
+    if (!fontReady || readmeOpen) return undefined
+    let frame = 0
 
     const paint = (now) => {
-      const elapsed = reducedMotion ? 1000 : now - startedAt
-      drawEmbroidery(
-        canvasRef.current,
-        layout,
-        stitches,
-        previousKeys,
-        elapsed,
-        !text,
-      )
-      if (!reducedMotion && elapsed < 560) {
-        animationFrame = requestAnimationFrame(paint)
+      const scene = sceneRef.current
+      const renderer = rendererRef.current
+      if (scene && renderer) {
+        scene.births = birthsRef.current
+        renderer.draw(scene, now)
       }
+      if (!reducedMotion) frame = requestAnimationFrame(paint)
     }
 
-    animationFrame = requestAnimationFrame(paint)
-    previousStitchesRef.current = stitches
-    previousTextRef.current = text
+    frame = requestAnimationFrame(paint)
+    return () => cancelAnimationFrame(frame)
+  }, [fontReady, readmeOpen, reducedMotion, text, focused, scrollRows, geometry])
 
-    return () => cancelAnimationFrame(animationFrame)
-  }, [fontReady, layout, reducedMotion, stitches, text])
-
+  // Keep the needle on screen as the text grows past the bottom border.
   useEffect(() => {
-    if (!fontReady || reducedMotion || !motionRef.current) return undefined
-
-    let lastScroll = window.scrollY
-    let velocity = 0
-    let animationFrame = 0
-
-    const settle = () => {
-      velocity *= 0.82
-      const scroll = window.scrollY
-      const tilt = Math.max(-1.2, Math.min(1.2, velocity * 0.055))
-      const sway = Math.sin(scroll * 0.008) * 2.2
-      motionRef.current?.style.setProperty('--cloth-tilt', `${tilt}deg`)
-      motionRef.current?.style.setProperty(
-        '--cloth-shift',
-        `${sway + Math.max(-5, Math.min(5, velocity * 0.11))}px`,
-      )
-      motionRef.current?.style.setProperty('--weave-y', `${scroll * -0.08}px`)
-
-      if (Math.abs(velocity) > 0.04) {
-        animationFrame = requestAnimationFrame(settle)
-      } else {
-        animationFrame = 0
-      }
+    if (!focused || !layout) return
+    const caretBottom = layout.caret.row + Math.round(geometry.em * 0.6)
+    const visibleBottom = scrollRows + geometry.visibleTextRows
+    if (caretBottom > visibleBottom) {
+      window.scrollTo({
+        top: (caretBottom - geometry.visibleTextRows) * geometry.cell,
+        behavior: 'auto',
+      })
     }
-
-    const onScroll = () => {
-      const nextScroll = window.scrollY
-      velocity += nextScroll - lastScroll
-      lastScroll = nextScroll
-      if (!animationFrame) animationFrame = requestAnimationFrame(settle)
-    }
-
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => {
-      window.removeEventListener('scroll', onScroll)
-      cancelAnimationFrame(animationFrame)
-    }
-  }, [fontReady, reducedMotion])
-
-  useEffect(() => {
-    if (!focused || !text || !caretRef.current) return undefined
-
-    const animationFrame = requestAnimationFrame(() => {
-      const bounds = caretRef.current.getBoundingClientRect()
-      if (bounds.bottom > window.innerHeight - 80) {
-        window.scrollBy({
-          top: bounds.bottom - window.innerHeight + 112,
-          behavior: reducedMotion ? 'auto' : 'smooth',
-        })
-      }
-    })
-
-    return () => cancelAnimationFrame(animationFrame)
-  }, [focused, layout.height, reducedMotion, text])
+  }, [focused, geometry, layout, scrollRows])
 
   const focusInput = () => inputRef.current?.focus({ preventScroll: true })
+  const keepCaretAtEnd = (event) => {
+    const input = event.currentTarget
+    const end = input.value.length
+    if (input.selectionStart !== end || input.selectionEnd !== end) {
+      input.setSelectionRange(end, end)
+    }
+  }
+
   return (
     <>
       <ProjectHeader readme={readme} />
-      <main className="project-page" aria-busy={!fontReady}>
-        <section className="stitch-stage" aria-label="Interactive embroidery canvas">
-          {!fontReady ? (
-            <div className="stitch-loader" role="status" aria-live="polite">
-              <span className="loader-thread" aria-hidden="true" />
-              <span>threading the needle…</span>
-            </div>
-          ) : (
-            <>
-              <div
-                ref={motionRef}
-                className={`cloth-motion${focused ? ' is-focused' : ''}`}
-              >
-                <div
-                  ref={clothRef}
-                  className="cloth-surface"
-                  onClick={focusInput}
-                  style={{ height: `${layout.height}px` }}
-                >
-                  <textarea
-                    ref={inputRef}
-                    className="stitch-input"
-                    value={text}
-                    onChange={(event) => setText(event.target.value)}
-                    onFocus={() => setFocused(true)}
-                    onBlur={() => setFocused(false)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Escape') event.currentTarget.blur()
-                    }}
-                    aria-label="Text to embroider"
-                    autoCapitalize="sentences"
-                    maxLength={12000}
-                    spellCheck
-                  />
-                  <canvas
-                    ref={canvasRef}
-                    className="embroidery-canvas"
-                    width={layout.width}
-                    height={layout.height}
-                    role="img"
-                    aria-label={
-                      text
-                        ? `Cross-stitched text: ${text.slice(0, 180)}`
-                        : 'An empty cross-stitch sampler'
-                    }
-                  />
-                  {text && focused && (
-                    <span
-                      ref={caretRef}
-                      className="stitch-caret"
-                      aria-hidden="true"
-                      style={{
-                        left: `${layout.caret.x}px`,
-                        top: `${layout.caret.y}px`,
-                        height: `${layout.caret.height}px`,
-                      }}
-                    />
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-        </section>
+      <main
+        className="lace-page"
+        aria-busy={!fontReady}
+        style={{ height: `${documentHeight - 66}px` }}
+        onClick={focusInput}
+      >
+        <canvas
+          ref={canvasRef}
+          className="lace-canvas"
+          role="img"
+          aria-label={
+            text
+              ? `Filet-lace text: ${text.slice(0, 180)}`
+              : 'An empty piece of filet lace'
+          }
+        />
+        {!fontReady && (
+          <div className="lace-loader" role="status" aria-live="polite">
+            threading the needle…
+          </div>
+        )}
+        <textarea
+          ref={inputRef}
+          className="lace-input"
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          onSelect={keepCaretAtEnd}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') event.currentTarget.blur()
+          }}
+          aria-label="Text to stitch"
+          autoCapitalize="sentences"
+          maxLength={12000}
+          spellCheck={false}
+        />
       </main>
     </>
   )

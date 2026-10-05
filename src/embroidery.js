@@ -1,465 +1,678 @@
-export const STITCH_FONT = '"Cormorant Garamond", Georgia, serif'
+// Filet-lace engine: the whole viewport is a crocheted mesh of open cells,
+// and text is "stitched" by filling cells solid, the way filet crochet
+// pictures are worked.
 
-const THREAD = '#8f302d'
-const THREAD_DARK = '#5e201f'
-const THREAD_LIGHT = '#c66557'
-const PROMPT_THREAD = '#a76f49'
+export const STITCH_FONT = '"Cormorant Garamond", Georgia, serif'
+export const STITCH_FONT_STYLE = 'italic 700'
+export const HEADER_HEIGHT = 66
+
+const BACKDROP = '#0c0b0a'
+const THREAD = '#ebe4d4'
+const THREAD_SHADE = '#b8ae9b'
+const THREAD_HIGHLIGHT = '#fffaf0'
+
+const SUBSAMPLE = 8
+const COVERAGE = 0.42
+const CELL_FILL_MS = 90
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max)
 }
 
-function splitWord(context, word, maxWidth) {
-  const segments = []
-  let segment = ''
-
-  for (const character of Array.from(word)) {
-    const candidate = segment + character
-    if (segment && context.measureText(candidate).width > maxWidth) {
-      segments.push(segment)
-      segment = character
-    } else {
-      segment = candidate
-    }
-  }
-
-  if (segment) segments.push(segment)
-  return segments
+function hash(x, y) {
+  const value = Math.sin(x * 127.1 + y * 311.7) * 43758.5453
+  return value - Math.floor(value)
 }
 
-function wrapParagraph(context, paragraph, maxWidth) {
-  if (!paragraph.length) return ['']
-
-  const words = paragraph.split(/\s+/)
-  const lines = []
-  let line = ''
-
-  for (const word of words) {
-    const candidate = line ? `${line} ${word}` : word
-    if (context.measureText(candidate).width <= maxWidth) {
-      line = candidate
-      continue
-    }
-
-    if (line) lines.push(line)
-
-    if (context.measureText(word).width <= maxWidth) {
-      line = word
-      continue
-    }
-
-    const segments = splitWord(context, word, maxWidth)
-    lines.push(...segments.slice(0, -1))
-    line = segments.at(-1) ?? ''
+export function createGeometry(viewportWidth, viewportHeight) {
+  const compact = viewportWidth < 560
+  const cell = compact ? 4 : clamp(Math.round(viewportWidth / 180), 6, 9)
+  const em = compact ? 18 : 17
+  const cols = Math.ceil(viewportWidth / cell)
+  const rows = Math.ceil(viewportHeight / cell)
+  const headerRows = Math.ceil(HEADER_HEIGHT / cell)
+  const side = compact ? 2 : 4
+  const frame = {
+    left: side,
+    right: Math.floor(viewportWidth / cell) - 1 - side,
+    top: headerRows + 1,
+    bottom: Math.floor(viewportHeight / cell) - 1 - (compact ? 3 : 4),
   }
-
-  lines.push(line)
-  return lines
-}
-
-export function createEmbroideryLayout(value, width, minimumHeight) {
-  const safeWidth = Math.max(300, Math.round(width))
-  const compact = safeWidth < 520
-  const fontSize = Math.round(clamp(safeWidth * 0.098, 42, 72))
-  const lineHeight = Math.round(fontSize * 1.16)
-  const textInset = compact ? 68 : 96
-  const textWidth = safeWidth - textInset * 2
-  const displayText = value || 'TYPE ANYTHING'
-  const measureCanvas = document.createElement('canvas')
-  const measureContext = measureCanvas.getContext('2d')
-
-  measureContext.font = `600 ${fontSize}px ${STITCH_FONT}`
-  const wrappedLines = displayText
-    .split('\n')
-    .flatMap((paragraph) => wrapParagraph(measureContext, paragraph, textWidth))
-  const lines = wrappedLines.length ? wrappedLines : ['']
-  const textHeight = Math.max(lineHeight, lines.length * lineHeight)
-  const topPadding = compact ? 142 : 168
-  const bottomPadding = compact ? 148 : 174
-  const height = Math.ceil(
-    Math.max(minimumHeight, topPadding + textHeight + bottomPadding),
-  )
-  const contentTop = Math.max(topPadding, (height - textHeight) / 2 - 4)
-  const lineMetrics = lines.map((line, index) => {
-    const lineWidth = measureContext.measureText(line).width
-    return {
-      text: line,
-      x: (safeWidth - lineWidth) / 2,
-      width: lineWidth,
-      baseline: contentTop + fontSize * 0.81 + index * lineHeight,
-    }
-  })
-  const finalLine = lineMetrics.at(-1)
-  const stitchGap = compact ? 4.8 : 5.6
+  // Text lives inside the double border (2 solid + 1 open + 1 solid).
+  const inner = {
+    left: frame.left + 4,
+    right: frame.right - 4,
+    top: frame.top + 4,
+    bottom: frame.bottom - 4,
+  }
+  const padX = compact ? 3 : 6
+  const padY = compact ? 3 : 5
 
   return {
-    width: safeWidth,
-    height,
-    fontSize,
-    lineHeight,
-    stitchGap,
-    textInset,
-    contentTop,
-    textHeight,
-    lines: lineMetrics,
-    caret: {
-      x: clamp(finalLine.x + finalLine.width + 7, textInset, safeWidth - textInset),
-      y: finalLine.baseline - fontSize * 0.72,
-      height: fontSize * 0.72,
-    },
+    cell,
+    em,
+    cols,
+    rows,
+    frame,
+    inner,
+    lineHeight: Math.round(em * 1.3),
+    textLeft: inner.left + padX,
+    textCols: Math.max(10, inner.right - inner.left + 1 - padX * 2),
+    textTop: inner.top + padY,
+    visibleTextRows: Math.max(1, inner.bottom - inner.top + 1 - padY * 2),
   }
 }
 
-export function rasterizeStitches(layout) {
-  const top = Math.max(0, Math.floor(layout.contentTop - layout.fontSize))
-  const bottom = Math.min(
-    layout.height,
-    Math.ceil(layout.contentTop + layout.textHeight + layout.fontSize),
-  )
-  const maskHeight = Math.max(1, bottom - top)
-  const mask = document.createElement('canvas')
-  mask.width = layout.width
-  mask.height = maskHeight
-  const context = mask.getContext('2d', { willReadFrequently: true })
+const glyphCache = new Map()
+let measureContext = null
 
-  context.clearRect(0, 0, layout.width, maskHeight)
+function getMeasureContext(em) {
+  if (!measureContext) {
+    measureContext = document.createElement('canvas').getContext('2d')
+  }
+  measureContext.font = `${STITCH_FONT_STYLE} ${em * SUBSAMPLE}px ${STITCH_FONT}`
+  return measureContext
+}
+
+// Rasterize one character to filet cells. Cells are relative to the glyph's
+// origin column and baseline row, and are ordered the way the needle works
+// them: row by row, turning back at the end of each row like crochet.
+export function getGlyph(character, em) {
+  const cacheKey = `${em}:${character}`
+  const cached = glyphCache.get(cacheKey)
+  if (cached) return cached
+
+  const measure = getMeasureContext(em)
+  const advance = measure.measureText(character).width / SUBSAMPLE
+  const pad = Math.ceil(em * 0.5)
+  const ascent = Math.ceil(em * 1.05)
+  const descent = Math.ceil(em * 0.45)
+  const widthCells = Math.ceil(advance) + pad * 2
+  const heightCells = ascent + descent
+  const canvas = document.createElement('canvas')
+  canvas.width = widthCells * SUBSAMPLE
+  canvas.height = heightCells * SUBSAMPLE
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  context.font = measure.font
   context.fillStyle = '#fff'
-  context.font = `600 ${layout.fontSize}px ${STITCH_FONT}`
   context.textBaseline = 'alphabetic'
-  for (const line of layout.lines) {
-    context.fillText(line.text, line.x, line.baseline - top)
+  context.fillText(character, pad * SUBSAMPLE, ascent * SUBSAMPLE)
+  // Thicken hairlines so thin serifs and joins survive at filet resolution.
+  context.strokeStyle = '#fff'
+  context.lineJoin = 'round'
+  context.lineWidth = SUBSAMPLE * 0.55
+  context.strokeText(character, pad * SUBSAMPLE, ascent * SUBSAMPLE)
+
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+  const rowsOfCells = []
+  const area = SUBSAMPLE * SUBSAMPLE
+
+  for (let cy = 0; cy < heightCells; cy += 1) {
+    const row = []
+    for (let cx = 0; cx < widthCells; cx += 1) {
+      let covered = 0
+      for (let sy = 0; sy < SUBSAMPLE; sy += 1) {
+        const offset = ((cy * SUBSAMPLE + sy) * canvas.width + cx * SUBSAMPLE) * 4
+        for (let sx = 0; sx < SUBSAMPLE; sx += 1) {
+          covered += pixels[offset + sx * 4 + 3] / 255
+        }
+      }
+      if (covered / area >= COVERAGE) row.push([cx - pad, cy - ascent])
+    }
+    if (row.length) rowsOfCells.push(row)
   }
 
-  const pixels = context.getImageData(0, 0, layout.width, maskHeight).data
-  const stitches = []
-  const gap = layout.stitchGap
-  const startX = Math.floor(layout.textInset / gap) * gap
-  const endX = layout.width - layout.textInset
-  const startY = Math.max(top, Math.floor(layout.contentTop / gap) * gap)
-  const endY = Math.min(bottom, layout.contentTop + layout.textHeight + gap)
+  const cells = rowsOfCells.flatMap((row, index) =>
+    index % 2 ? row.reverse() : row,
+  )
+  const glyph = { cells, advance }
+  glyphCache.set(cacheKey, glyph)
+  return glyph
+}
 
-  for (let y = startY; y <= endY; y += gap) {
-    for (let x = startX; x <= endX; x += gap) {
-      const sampleX = Math.round(x)
-      const sampleY = Math.round(y - top)
-      if (sampleY < 0 || sampleY >= maskHeight) continue
-      const index = (sampleY * layout.width + sampleX) * 4 + 3
-      const alpha = pixels[index] ?? 0
-      if (alpha > 76) {
-        stitches.push({
-          x,
-          y,
-          key: `${Math.round(x / gap)}:${Math.round(y / gap)}`,
-        })
+// Lay text out on the grid. Columns are relative to the text area's left
+// edge; rows are baseline rows relative to the text area's top.
+export function layoutText(text, geometry) {
+  const { em, lineHeight, textCols } = geometry
+  const baselineOffset = Math.round(em * 1.0)
+  const spaceAdvance = getGlyph(' ', em).advance
+  const characters = Array.from(text)
+  const placed = []
+  let line = 0
+  let x = 0
+
+  const advanceOf = (character) =>
+    character === ' ' ? spaceAdvance : getGlyph(character, em).advance
+
+  let index = 0
+  while (index < characters.length) {
+    const character = characters[index]
+
+    if (character === '\n') {
+      placed.push({ index, character, col: Math.round(x), line, glyph: null })
+      line += 1
+      x = 0
+      index += 1
+      continue
+    }
+
+    if (character === ' ') {
+      placed.push({ index, character, col: Math.round(x), line, glyph: null })
+      x += spaceAdvance
+      index += 1
+      continue
+    }
+
+    let end = index
+    let wordWidth = 0
+    while (end < characters.length && !/\s/.test(characters[end])) {
+      wordWidth += advanceOf(characters[end])
+      end += 1
+    }
+
+    if (x > 0 && x + wordWidth > textCols) {
+      line += 1
+      x = 0
+    }
+
+    for (let cursor = index; cursor < end; cursor += 1) {
+      const glyph = getGlyph(characters[cursor], em)
+      if (x > 0 && x + glyph.advance > textCols) {
+        line += 1
+        x = 0
+      }
+      placed.push({
+        index: cursor,
+        character: characters[cursor],
+        col: Math.round(x),
+        line,
+        glyph,
+      })
+      x += glyph.advance
+    }
+    index = end
+  }
+
+  const lastLine = line
+  return {
+    characters: placed,
+    lines: lastLine + 1,
+    baselineOffset,
+    caret: {
+      col: Math.min(Math.round(x) + 1, textCols),
+      row: baselineOffset + lastLine * lineHeight - Math.round(em * 0.32),
+      line: lastLine,
+    },
+    height: baselineOffset + lastLine * lineHeight + Math.round(em * 0.5),
+  }
+}
+
+function makeMeshTile(cell, ratio) {
+  const tileCells = 4
+  const size = cell * tileCells
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(size * ratio)
+  canvas.height = Math.round(size * ratio)
+  const context = canvas.getContext('2d')
+  context.scale(ratio, ratio)
+  context.fillStyle = BACKDROP
+  context.fillRect(0, 0, size, size)
+
+  const lineWidth = Math.max(1.3, cell * 0.24)
+
+  for (let i = 0; i < tileCells; i += 1) {
+    for (let j = 0; j < tileCells; j += 1) {
+      const x = i * cell
+      const y = j * cell
+      const tone = 0.82 + hash(i, j) * 0.18
+      context.globalAlpha = tone
+      context.fillStyle = THREAD_SHADE
+      context.fillRect(x, y, cell, lineWidth)
+      context.fillRect(x, y, lineWidth, cell)
+      context.fillStyle = THREAD
+      context.fillRect(x, y, cell, lineWidth * 0.62)
+      context.fillRect(x, y, lineWidth * 0.62, cell)
+      // Twisted ply: tiny highlights along each thread.
+      context.globalAlpha = 0.55 * tone
+      context.fillStyle = THREAD_HIGHLIGHT
+      for (let k = 1; k < cell; k += 2.5) {
+        context.fillRect(x + k, y + lineWidth * 0.12, 0.9, lineWidth * 0.35)
+        context.fillRect(x + lineWidth * 0.12, y + k, lineWidth * 0.35, 0.9)
+      }
+      // Knot where the threads cross.
+      context.globalAlpha = tone
+      context.fillStyle = THREAD
+      context.fillRect(x - 0.3, y - 0.3, lineWidth + 0.6, lineWidth + 0.6)
+    }
+  }
+  context.globalAlpha = 1
+  return canvas
+}
+
+function drawFilledCell(context, x, y, cell, lineWidth, progress = 1) {
+  const width = cell + lineWidth
+  const bar = width / 3
+
+  if (progress >= 1) {
+    context.fillStyle = THREAD
+    context.fillRect(x, y, width, width)
+    context.fillStyle = 'rgba(120, 108, 88, 0.22)'
+    context.fillRect(x + bar - 0.3, y, 0.6, width)
+    context.fillRect(x + bar * 2 - 0.3, y, 0.6, width)
+    context.fillStyle = 'rgba(255, 252, 244, 0.5)'
+    context.fillRect(x + bar * 0.35, y, 0.7, width)
+    context.fillRect(x + bar * 1.35, y, 0.7, width)
+    return
+  }
+
+  // A filet block is worked as three trebles; grow each bar upward in turn.
+  for (let k = 0; k < 3; k += 1) {
+    const amount = clamp(progress * 3 - k, 0, 1)
+    if (amount <= 0) continue
+    const height = width * amount
+    context.fillStyle = THREAD
+    context.fillRect(x + bar * k, y + width - height, bar + 0.2, height)
+    context.fillStyle = 'rgba(255, 252, 244, 0.5)'
+    context.fillRect(x + bar * (k + 0.35), y + width - height, 0.7, height)
+  }
+}
+
+// Border cells in viewport-grid coordinates: a double border with stepped
+// corners, plus a small diamond motif at the middle of the top and bottom.
+function frameCells(geometry) {
+  const { frame } = geometry
+  const cells = []
+  const { left, right, top, bottom } = frame
+  const notch = 3
+
+  const push = (x, y) => cells.push([x, y])
+  const ring = (inset, thickness) => {
+    for (let t = 0; t < thickness; t += 1) {
+      const l = left + inset + t
+      const r = right - inset - t
+      const tp = top + inset + t
+      const b = bottom - inset - t
+      for (let x = l; x <= r; x += 1) {
+        push(x, tp)
+        push(x, b)
+      }
+      for (let y = tp + 1; y < b; y += 1) {
+        push(l, y)
+        push(r, y)
       }
     }
   }
 
-  return stitches
-}
+  ring(0, 2)
+  ring(3, 1)
 
-function drawFabric(context, width, height, gap) {
-  const base = context.createLinearGradient(0, 0, width, height)
-  base.addColorStop(0, '#f2e4c9')
-  base.addColorStop(0.46, '#e7d4b3')
-  base.addColorStop(1, '#ddc39d')
-  context.fillStyle = base
-  context.fillRect(0, 0, width, height)
-
-  const edgeShade = context.createLinearGradient(0, 0, width, 0)
-  edgeShade.addColorStop(0, 'rgba(104, 64, 37, 0.12)')
-  edgeShade.addColorStop(0.08, 'rgba(255, 250, 233, 0.03)')
-  edgeShade.addColorStop(0.5, 'rgba(255, 255, 255, 0.07)')
-  edgeShade.addColorStop(0.92, 'rgba(255, 250, 233, 0.02)')
-  edgeShade.addColorStop(1, 'rgba(104, 64, 37, 0.14)')
-  context.fillStyle = edgeShade
-  context.fillRect(0, 0, width, height)
-
-  context.save()
-  context.lineWidth = 0.55
-  context.strokeStyle = 'rgba(115, 74, 45, 0.16)'
-  for (let x = 1; x < width; x += gap) {
-    context.beginPath()
-    context.moveTo(x, 0)
-    context.lineTo(x + Math.sin(x * 0.19) * 0.6, height)
-    context.stroke()
-  }
-  for (let y = 1; y < height; y += gap) {
-    context.beginPath()
-    context.moveTo(0, y)
-    context.lineTo(width, y + Math.sin(y * 0.17) * 0.55)
-    context.stroke()
-  }
-
-  context.fillStyle = 'rgba(112, 72, 40, 0.075)'
-  for (let y = 13; y < height; y += 19) {
-    for (let x = 9; x < width; x += 23) {
-      const offset = Math.sin(x * 12.9898 + y * 78.233)
-      if (offset > 0.15) context.fillRect(x + offset * 2, y, 1.2, 0.75)
+  // Stepped corner blocks that sit outside the border, like the reference
+  // pieces' notched corners.
+  const corners = [
+    [left, top, -1, -1],
+    [right, top, 1, -1],
+    [left, bottom, -1, 1],
+    [right, bottom, 1, 1],
+  ]
+  for (const [cx, cy, dx, dy] of corners) {
+    for (let i = 1; i <= notch - 1; i += 1) {
+      for (let j = 1; j <= notch - 1; j += 1) {
+        if (i + j <= notch) push(cx + dx * i, cy + dy * j)
+      }
     }
   }
-  context.restore()
-}
 
-function addCrossPath(context, x, y, radius) {
-  context.moveTo(x - radius, y - radius)
-  context.lineTo(x + radius, y + radius)
-  context.moveTo(x + radius, y - radius)
-  context.lineTo(x - radius, y + radius)
-}
-
-function drawCrossBatch(context, stitches, size, color, alpha = 1) {
-  if (!stitches.length) return
-  const radius = size / 2
-
-  context.save()
-  context.globalAlpha = alpha
-  context.lineCap = 'round'
-  context.lineJoin = 'round'
-
-  context.beginPath()
-  for (const stitch of stitches) addCrossPath(context, stitch.x, stitch.y, radius)
-  context.strokeStyle = THREAD_DARK
-  context.lineWidth = Math.max(1.15, size * 0.34)
-  context.stroke()
-
-  context.beginPath()
-  for (const stitch of stitches) addCrossPath(context, stitch.x, stitch.y, radius * 0.92)
-  context.strokeStyle = color
-  context.lineWidth = Math.max(0.72, size * 0.2)
-  context.stroke()
-
-  context.beginPath()
-  for (const stitch of stitches) {
-    context.moveTo(stitch.x - radius * 0.78, stitch.y - radius * 0.88)
-    context.lineTo(stitch.x + radius * 0.72, stitch.y + radius * 0.62)
+  const diamond = (cx, cy) => {
+    const shape = [
+      [0, -2],
+      [-1, -1],
+      [1, -1],
+      [-2, 0],
+      [2, 0],
+      [-1, 1],
+      [1, 1],
+      [0, 2],
+    ]
+    for (const [dx, dy] of shape) push(cx + dx, cy + dy)
   }
-  context.strokeStyle = THREAD_LIGHT
-  context.globalAlpha = alpha * 0.48
-  context.lineWidth = Math.max(0.42, size * 0.08)
-  context.stroke()
-  context.restore()
+  const middle = Math.round((left + right) / 2)
+  diamond(middle, top + 1)
+  diamond(middle, bottom - 1)
+
+  return cells
 }
 
-function drawPartialCross(context, stitch, size, progress, color) {
-  if (progress <= 0) return
-  const radius = size / 2
-  const first = clamp(progress * 2, 0, 1)
-  const second = clamp((progress - 0.5) * 2, 0, 1)
-
-  context.save()
-  context.lineCap = 'round'
-  context.strokeStyle = THREAD_DARK
-  context.lineWidth = Math.max(1.15, size * 0.34)
-  context.beginPath()
-  context.moveTo(stitch.x - radius, stitch.y - radius)
-  context.lineTo(
-    stitch.x - radius + radius * 2 * first,
-    stitch.y - radius + radius * 2 * first,
+function labelHoles(geometry) {
+  const { cell } = geometry
+  return Array.from(document.querySelectorAll('.ph-project-header a')).map(
+    (link) => {
+      const bounds = link.getBoundingClientRect()
+      return {
+        left: Math.floor((bounds.left - 6) / cell),
+        right: Math.floor((bounds.right + 6) / cell),
+        top: Math.floor((bounds.top - 3) / cell),
+        bottom: Math.floor((bounds.bottom + 3) / cell),
+      }
+    },
   )
-  if (second > 0) {
-    context.moveTo(stitch.x + radius, stitch.y - radius)
-    context.lineTo(
-      stitch.x + radius - radius * 2 * second,
-      stitch.y - radius + radius * 2 * second,
-    )
+}
+
+function needleShape(tipX, tipY, cell) {
+  const length = Math.max(48, cell * 9)
+  const angle = -Math.PI * 0.32
+  const dx = Math.cos(angle)
+  const dy = Math.sin(angle)
+  return {
+    tipX,
+    tipY,
+    eyeX: tipX + dx * length * 0.86,
+    eyeY: tipY + dy * length * 0.86,
+    endX: tipX + dx * length,
+    endY: tipY + dy * length,
+    dx,
+    dy,
   }
-  context.stroke()
-
-  context.strokeStyle = color
-  context.lineWidth = Math.max(0.72, size * 0.2)
-  context.stroke()
-  context.restore()
 }
 
-function makeBorderStitches(width, height, inset, gap) {
-  const stitches = []
-  const right = width - inset
-  const bottom = height - inset
-
-  for (let x = inset; x <= right; x += gap) {
-    stitches.push({ x, y: inset }, { x, y: bottom })
-  }
-  for (let y = inset + gap; y < bottom; y += gap) {
-    stitches.push({ x: inset, y }, { x: right, y })
-  }
-  return stitches
-}
-
-function drawRosette(context, x, y, scale = 1) {
-  const points = [
-    [0, 0],
-    [-6, 0],
-    [6, 0],
-    [0, -6],
-    [0, 6],
-    [-4, -4],
-    [4, -4],
-    [-4, 4],
-    [4, 4],
-  ].map(([dx, dy]) => ({ x: x + dx * scale, y: y + dy * scale }))
-  drawCrossBatch(context, points, 4.5 * scale, THREAD, 0.92)
-}
-
-function drawStar(context, x, y, scale = 1) {
-  const points = [
-    [0, -10],
-    [0, 0],
-    [0, 10],
-    [-10, 0],
-    [10, 0],
-    [-5, -5],
-    [5, -5],
-    [-5, 5],
-    [5, 5],
-  ].map(([dx, dy]) => ({ x: x + dx * scale, y: y + dy * scale }))
-  drawCrossBatch(context, points, 4.2 * scale, THREAD, 0.8)
-}
-
-function drawFlourish(context, width, y, direction = 1) {
-  const center = width / 2
-  const reach = Math.min(112, width * 0.17)
+function drawThread(context, from, to, sag, cell) {
+  const width = Math.max(2, cell * 0.42)
+  const midX = (from.x + to.x) / 2
+  const c1x = from.x + (midX - from.x) * 0.6
+  const c2x = to.x + (midX - to.x) * 0.6
+  const lowest = Math.max(from.y, to.y) + sag
 
   context.save()
+  context.lineCap = 'round'
+  context.beginPath()
+  context.moveTo(from.x, from.y)
+  context.bezierCurveTo(c1x, lowest, c2x, lowest, to.x, to.y)
+  context.strokeStyle = 'rgba(0, 0, 0, 0.55)'
+  context.lineWidth = width + 2
+  context.stroke()
+  context.strokeStyle = THREAD_SHADE
+  context.lineWidth = width
+  context.stroke()
   context.strokeStyle = THREAD
-  context.lineWidth = 1.7
-  context.lineCap = 'round'
-  context.globalAlpha = 0.9
-  context.beginPath()
-  context.moveTo(center - 2, y)
-  context.bezierCurveTo(
-    center - reach * 0.26,
-    y - 11 * direction,
-    center - reach * 0.48,
-    y + 13 * direction,
-    center - reach,
-    y,
-  )
-  context.moveTo(center + 2, y)
-  context.bezierCurveTo(
-    center + reach * 0.26,
-    y - 11 * direction,
-    center + reach * 0.48,
-    y + 13 * direction,
-    center + reach,
-    y,
-  )
+  context.lineWidth = width * 0.55
+  context.stroke()
+  context.setLineDash([1.2, 2.6])
+  context.strokeStyle = THREAD_HIGHLIGHT
+  context.lineWidth = width * 0.3
   context.stroke()
   context.restore()
-
-  drawRosette(context, center, y, 0.82)
-  drawRosette(context, center - reach, y, 0.5)
-  drawRosette(context, center + reach, y, 0.5)
 }
 
-function drawDecorations(context, layout) {
-  const outerInset = layout.width < 520 ? 20 : 28
-  const borderGap = layout.width < 520 ? 9.5 : 11
-  const borderStitches = makeBorderStitches(
-    layout.width,
-    layout.height,
-    outerInset,
-    borderGap,
-  )
-  drawCrossBatch(context, borderStitches, 5, THREAD, 0.94)
+function drawNeedle(context, needle) {
+  const { tipX, tipY, endX, endY, eyeX, eyeY, dx, dy } = needle
+  const nx = -dy
+  const ny = dx
 
-  const innerInset = outerInset + 14
   context.save()
-  context.strokeStyle = THREAD
-  context.lineWidth = 1.35
-  context.globalAlpha = 0.82
-  context.setLineDash([2, 4])
-  context.strokeRect(
-    innerInset,
-    innerInset,
-    layout.width - innerInset * 2,
-    layout.height - innerInset * 2,
+  context.lineCap = 'round'
+  context.beginPath()
+  context.moveTo(tipX, tipY)
+  context.lineTo(endX, endY)
+  context.strokeStyle = 'rgba(0, 0, 0, 0.6)'
+  context.lineWidth = 5.4
+  context.stroke()
+
+  const steel = context.createLinearGradient(
+    tipX + nx * 2,
+    tipY + ny * 2,
+    tipX - nx * 2,
+    tipY - ny * 2,
   )
+  steel.addColorStop(0, '#6f7378')
+  steel.addColorStop(0.45, '#f4f6f8')
+  steel.addColorStop(1, '#8a8f95')
+  context.beginPath()
+  context.moveTo(tipX, tipY)
+  context.lineTo(endX, endY)
+  context.strokeStyle = steel
+  context.lineWidth = 3.2
+  context.stroke()
+
+  context.beginPath()
+  context.moveTo(eyeX - dx * 3.2, eyeY - dy * 3.2)
+  context.lineTo(eyeX + dx * 3.2, eyeY + dy * 3.2)
+  context.strokeStyle = '#1a1a1a'
+  context.lineWidth = 0.9
+  context.stroke()
   context.restore()
-
-  const cornerOffset = innerInset + 12
-  drawRosette(context, cornerOffset, cornerOffset, 0.72)
-  drawRosette(context, layout.width - cornerOffset, cornerOffset, 0.72)
-  drawRosette(context, cornerOffset, layout.height - cornerOffset, 0.72)
-  drawRosette(
-    context,
-    layout.width - cornerOffset,
-    layout.height - cornerOffset,
-    0.72,
-  )
-
-  drawFlourish(context, layout.width, innerInset + 42, 1)
-  drawFlourish(context, layout.width, layout.height - innerInset - 42, -1)
-
-  const sideX = innerInset + 12
-  for (let y = innerInset + 112; y < layout.height - innerInset - 100; y += 166) {
-    drawStar(context, sideX, y, 0.62)
-    drawStar(context, layout.width - sideX, y, 0.62)
-  }
 }
 
-function drawTextStitches(
-  context,
-  stitches,
-  previousKeys,
-  gap,
-  elapsed,
-  prompt,
-) {
-  const color = prompt ? PROMPT_THREAD : THREAD
-  const size = gap * 0.76
-  const existing = []
-  const completed = []
-  const partial = []
+export class LaceRenderer {
+  constructor(canvas) {
+    this.canvas = canvas
+    this.context = canvas.getContext('2d')
+    this.staticLayer = document.createElement('canvas')
+    this.staticKey = ''
+    this.needle = null
+    this.lastFrame = 0
+  }
 
-  for (const stitch of stitches) {
-    if (previousKeys.has(stitch.key)) {
-      existing.push(stitch)
-      continue
+  resize(width, height, geometry) {
+    const ratio = Math.min(window.devicePixelRatio || 1, 2)
+    this.ratio = ratio
+    this.width = width
+    this.height = height
+    this.geometry = geometry
+    this.lineWidth = Math.max(1.3, geometry.cell * 0.24)
+    this.canvas.width = Math.round(width * ratio)
+    this.canvas.height = Math.round(height * ratio)
+    this.staticLayer.width = this.canvas.width
+    this.staticLayer.height = this.canvas.height
+    this.meshTile = makeMeshTile(geometry.cell, ratio)
+    this.frame = frameCells(geometry)
+    this.holes = labelHoles(geometry)
+    this.staticKey = ''
+    this.needle = null
+  }
+
+  // Map a text-area cell (col, row) to viewport pixels, or null if it is
+  // clipped by the border.
+  cellToScreen(col, row, scrollRows) {
+    const { geometry } = this
+    const gx = geometry.textLeft + col
+    const gy = geometry.textTop + row - scrollRows
+    if (
+      gx < geometry.inner.left ||
+      gx > geometry.inner.right ||
+      gy < geometry.inner.top ||
+      gy > geometry.inner.bottom
+    ) {
+      return null
+    }
+    return { x: gx * geometry.cell, y: gy * geometry.cell }
+  }
+
+  renderStatic(scene) {
+    const { geometry, ratio, lineWidth } = this
+    const context = this.staticLayer.getContext('2d')
+    context.setTransform(1, 0, 0, 1, 0, 0)
+    const pattern = context.createPattern(this.meshTile, 'repeat')
+    pattern.setTransform(new DOMMatrix().scale(1 / ratio))
+    context.setTransform(ratio, 0, 0, ratio, 0, 0)
+    context.fillStyle = pattern
+    context.fillRect(0, 0, this.width, this.height)
+
+    // Cut a hole in the lace under each header link, finished with a solid
+    // buttonhole edge, so the links stay legible on top of the fabric.
+    for (const hole of this.holes) {
+      for (let y = hole.top - 1; y <= hole.bottom + 1; y += 1) {
+        for (let x = hole.left - 1; x <= hole.right + 1; x += 1) {
+          const edge =
+            y < hole.top || y > hole.bottom || x < hole.left || x > hole.right
+          const corner =
+            (y < hole.top || y > hole.bottom) && (x < hole.left || x > hole.right)
+          if (corner) continue
+          if (edge) {
+            drawFilledCell(context, x * geometry.cell, y * geometry.cell, geometry.cell, lineWidth)
+          } else {
+            context.fillStyle = BACKDROP
+            context.fillRect(
+              x * geometry.cell + lineWidth,
+              y * geometry.cell + lineWidth,
+              geometry.cell,
+              geometry.cell,
+            )
+          }
+        }
+      }
     }
 
-    const stagger = ((stitch.x / gap + stitch.y / gap) % 23) * 7
-    const progress = clamp((elapsed - stagger) / 360, 0, 1)
-    if (progress >= 1) completed.push(stitch)
-    else if (progress > 0) partial.push({ stitch, progress })
+    for (const [x, y] of this.frame) {
+      drawFilledCell(context, x * geometry.cell, y * geometry.cell, geometry.cell, lineWidth)
+    }
+
+    const { layout, scrollRows, animating, placeholder } = scene
+    for (const placedCharacter of layout.characters) {
+      if (!placedCharacter.glyph || animating.has(placedCharacter.index)) continue
+      const baseRow = layout.baselineOffset + placedCharacter.line * geometry.lineHeight
+      for (const [dx, dy] of placedCharacter.glyph.cells) {
+        const point = this.cellToScreen(placedCharacter.col + dx, baseRow + dy, scrollRows)
+        if (!point) continue
+        if (placeholder) {
+          context.fillStyle = 'rgba(235, 228, 212, 0.62)'
+          const dot = Math.max(2, geometry.cell * 0.5)
+          context.fillRect(
+            point.x + lineWidth + (geometry.cell - lineWidth - dot) / 2,
+            point.y + lineWidth + (geometry.cell - lineWidth - dot) / 2,
+            dot,
+            dot,
+          )
+        } else {
+          drawFilledCell(context, point.x, point.y, geometry.cell, lineWidth)
+        }
+      }
+    }
   }
 
-  drawCrossBatch(context, existing, size, color, prompt ? 0.72 : 1)
-  drawCrossBatch(context, completed, size, color, prompt ? 0.72 : 1)
-  for (const item of partial) {
-    drawPartialCross(context, item.stitch, size, item.progress, color)
+  draw(scene, now) {
+    const { geometry, ratio, lineWidth, context } = this
+    const { layout, scrollRows, births, placeholder, focused, reducedMotion } = scene
+
+    const animating = new Set()
+    let active = null
+    let lastStitched = null
+    for (const placedCharacter of layout.characters) {
+      const birth = births[placedCharacter.index]
+      if (!placedCharacter.glyph || placeholder || birth === undefined) continue
+      const duration = stitchDuration(placedCharacter.glyph)
+      if (now < birth + duration + CELL_FILL_MS) animating.add(placedCharacter.index)
+      if (now >= birth && (!active || birth >= active.birth)) {
+        active = { placedCharacter, birth, duration }
+      }
+    }
+
+    const staticKey = [
+      layout.characters.length,
+      layout.lines,
+      scrollRows,
+      placeholder,
+      [...animating].join(','),
+      geometry.cell,
+    ].join('|')
+    if (staticKey !== this.staticKey) {
+      this.renderStatic({ layout, scrollRows, animating, placeholder })
+      this.staticKey = staticKey
+    }
+
+    context.setTransform(1, 0, 0, 1, 0, 0)
+    context.drawImage(this.staticLayer, 0, 0)
+    context.setTransform(ratio, 0, 0, ratio, 0, 0)
+
+    const cellCenter = (point) => ({
+      x: point.x + lineWidth + (geometry.cell - lineWidth) / 2,
+      y: point.y + lineWidth + (geometry.cell - lineWidth) / 2,
+    })
+
+    for (const placedCharacter of layout.characters) {
+      if (!animating.has(placedCharacter.index)) continue
+      const birth = births[placedCharacter.index]
+      const { cells } = placedCharacter.glyph
+      const duration = stitchDuration(placedCharacter.glyph)
+      const baseRow = layout.baselineOffset + placedCharacter.line * geometry.lineHeight
+      cells.forEach(([dx, dy], cellIndex) => {
+        const start = birth + (cellIndex / cells.length) * duration
+        const progress = clamp((now - start) / CELL_FILL_MS, 0, 1)
+        if (progress <= 0) return
+        const point = this.cellToScreen(placedCharacter.col + dx, baseRow + dy, scrollRows)
+        if (point) drawFilledCell(context, point.x, point.y, geometry.cell, lineWidth, progress)
+      })
+    }
+
+    // Where the needle should be, and where its thread is anchored.
+    let target
+    let stitching = false
+    if (active && now < active.birth + active.duration) {
+      const { placedCharacter, birth, duration } = active
+      const { cells } = placedCharacter.glyph
+      const position = clamp(((now - birth) / duration) * cells.length, 0, cells.length - 1)
+      const [dx, dy] = cells[Math.floor(position)]
+      const baseRow = layout.baselineOffset + placedCharacter.line * geometry.lineHeight
+      const point = this.cellToScreen(placedCharacter.col + dx, baseRow + dy, scrollRows)
+      if (point) {
+        target = cellCenter(point)
+        stitching = true
+        const previous = cells[Math.max(0, Math.floor(position) - 1)]
+        const anchorPoint = this.cellToScreen(
+          placedCharacter.col + previous[0],
+          baseRow + previous[1],
+          scrollRows,
+        )
+        lastStitched = anchorPoint ? cellCenter(anchorPoint) : null
+      }
+    }
+
+    if (!target) {
+      const caretPoint = this.cellToScreen(layout.caret.col, layout.caret.row, scrollRows)
+      target = caretPoint
+        ? cellCenter(caretPoint)
+        : {
+            x: (geometry.textLeft + layout.caret.col) * geometry.cell,
+            y: (geometry.inner.bottom - 2) * geometry.cell,
+          }
+      const last = [...layout.characters].reverse().find((item) => item.glyph)
+      if (last && !placeholder) {
+        const { cells } = last.glyph
+        const [dx, dy] = cells[cells.length - 1] ?? [0, 0]
+        const baseRow = layout.baselineOffset + last.line * geometry.lineHeight
+        const anchorPoint = this.cellToScreen(last.col + dx, baseRow + dy, scrollRows)
+        lastStitched = anchorPoint ? cellCenter(anchorPoint) : null
+      }
+    }
+
+    const elapsed = this.lastFrame ? Math.min(64, now - this.lastFrame) : 16
+    this.lastFrame = now
+    if (!this.needle || reducedMotion) {
+      this.needle = { ...target }
+    } else {
+      const follow = 1 - Math.exp(-elapsed / (stitching ? 26 : 70))
+      this.needle.x += (target.x - this.needle.x) * follow
+      this.needle.y += (target.y - this.needle.y) * follow
+    }
+
+    const bob = focused && !stitching && !reducedMotion ? Math.sin(now / 420) * 1.6 : 0
+    const needle = needleShape(this.needle.x, this.needle.y + bob, geometry.cell)
+    const eye = { x: needle.eyeX, y: needle.eyeY }
+    const sway = reducedMotion ? 0 : Math.sin(now / 900) * geometry.cell * 0.6
+
+    if (lastStitched) {
+      drawThread(context, lastStitched, eye, geometry.cell * 2.2 + sway, geometry.cell)
+    } else {
+      const loose = {
+        x: eye.x - geometry.cell * 5 + sway,
+        y: eye.y + geometry.cell * 11,
+      }
+      drawThread(context, eye, loose, geometry.cell * 1.5, geometry.cell)
+    }
+    drawNeedle(context, needle)
+
+    return animating.size > 0 || stitching
   }
 }
 
-export function drawEmbroidery(
-  canvas,
-  layout,
-  stitches,
-  previousKeys,
-  elapsed,
-  prompt,
-) {
-  const ratio = Math.min(window.devicePixelRatio || 1, 2)
-  const pixelWidth = Math.round(layout.width * ratio)
-  const pixelHeight = Math.round(layout.height * ratio)
-
-  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
-    canvas.width = pixelWidth
-    canvas.height = pixelHeight
-  }
-  canvas.style.height = `${layout.height}px`
-
-  const context = canvas.getContext('2d')
-  context.setTransform(ratio, 0, 0, ratio, 0, 0)
-  context.clearRect(0, 0, layout.width, layout.height)
-  drawFabric(context, layout.width, layout.height, layout.stitchGap)
-  drawDecorations(context, layout)
-  drawTextStitches(
-    context,
-    stitches,
-    previousKeys,
-    layout.stitchGap,
-    elapsed,
-    prompt,
-  )
+export function stitchDuration(glyph) {
+  return clamp(glyph.cells.length * 7, 220, 520)
 }
