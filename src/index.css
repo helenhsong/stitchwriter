@@ -55,3 +55,10 @@ html[data-ph-open] .lace-page {
   opacity: 0;
   resize: none;
 }
+
+/* Over the lace, the header links are fabric buttons drawn on the canvas
+   with their labels stitched in; the link text itself stays in place,
+   invisible, so it is still what gets clicked, focused and read aloud. */
+html:not([data-ph-open]) .ph-project-header a {
+  color: transparent;
+}

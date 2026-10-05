@@ -542,8 +542,8 @@ function makeBlockSprites(geometry, ratio) {
   return sprites
 }
 
-// Hand-charted filet motifs, in the style of a filet pattern sheet: a
-// heart and a ribbon bow. X is a filled block.
+// Hand-charted filet motifs, in the style of a filet pattern sheet, such as
+// the ribbon bow. X is a filled block.
 function parseChart(rows) {
   const width = Math.max(...rows.map((row) => row.length))
   const cells = rows.flatMap((row, y) =>
@@ -551,14 +551,6 @@ function parseChart(rows) {
   )
   return { width, height: rows.length, cells }
 }
-
-const TINY_HEART = parseChart([
-  'XX.XX',
-  'XXXXX',
-  'XXXXX',
-  '.XXX.',
-  '..X..',
-])
 
 const BOW = parseChart([
   '.XXXXX.............XXXXX.',
@@ -825,17 +817,50 @@ function soften(layer, amount) {
   context.restore()
 }
 
-function labelHoles(geometry) {
-  const { cell } = geometry
+// The header links' lettering, charted in a sturdy monospace so it stays
+// legible at a few stitches tall.
+const BUTTON_FACE = {
+  style: 'bold',
+  family: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  thicken: 0.1,
+}
+
+// A fabric button for each header link: its label charted to cells and a
+// rounded patch of solid stitches around it, centred on the link.
+function labelButtons(geometry) {
+  const { cell, cols } = geometry
+  const em = 9
   return Array.from(document.querySelectorAll('.ph-project-header a')).map(
     (link) => {
+      link.style.padding = ''
+      link.style.margin = ''
       const bounds = link.getBoundingClientRect()
-      return {
-        left: Math.floor((bounds.left - 6) / cell),
-        right: Math.floor((bounds.right + 6) / cell),
-        top: Math.floor((bounds.top - 3) / cell),
-        bottom: Math.floor((bounds.bottom + 3) / cell),
+      const glyphs = Array.from(link.textContent.trim()).map((character) =>
+        getGlyph(character, em, BUTTON_FACE),
+      )
+      const textWidth = Math.round(glyphs.reduce((sum, glyph) => sum + glyph.advance, 0))
+      const width = textWidth + 8
+      const height = Math.round(em * 1.1) + 6
+      const centreX = Math.round((bounds.left + bounds.right) / 2 / cell)
+      const centreY = Math.round((bounds.top + bounds.bottom) / 2 / cell)
+      // Kept clear of the edges of the screen.
+      const left = clamp(centreX - Math.floor(width / 2), 2, cols - width - 3)
+      const top = centreY - Math.floor(height / 2)
+      const letters = new Set()
+      let x = left + 4
+      const baseline = top + 3 + Math.round(em * 0.8)
+      for (const glyph of glyphs) {
+        for (const [dx, dy] of glyph.cells) letters.add(`${Math.round(x) + dx},${baseline + dy}`)
+        x += glyph.advance
       }
+      // Grow the link to cover its button, without moving anything around
+      // it, so the whole button can be clicked.
+      const padLeft = Math.max(0, bounds.left - left * cell)
+      const padRight = Math.max(0, (left + width) * cell - bounds.right)
+      const padY = Math.max(0, (height * cell - bounds.height) / 2)
+      link.style.padding = `${padY}px ${padRight}px ${padY}px ${padLeft}px`
+      link.style.margin = `${-padY}px ${-padRight}px ${-padY}px ${-padLeft}px`
+      return { left, top, right: left + width - 1, bottom: top + height - 1, letters }
     },
   )
 }
@@ -1120,56 +1145,36 @@ export class LaceRenderer {
     })
     soften(this.meshLayer, this.ratio * 0.3)
 
-    // Cut a hole in the lace under each header link, finished with a solid
-    // edge, so the links stay legible on top of the fabric.
+    // A white fabric button under each header link, its label stitched in
+    // black: the button is worked solid, with the letters and a running
+    // stitch just inside its edge left open to the dark ground.
     const { context } = this.holesLayer
-    for (const hole of labelHoles(geometry)) {
+    for (const button of labelButtons(geometry)) {
+      const { left, top, right, bottom, letters } = button
       context.save()
       context.beginPath()
       context.rect(
-        hole.left * cell + lineWidth,
-        hole.top * cell + lineWidth,
-        (hole.right - hole.left + 1) * cell,
-        (hole.bottom - hole.top + 1) * cell,
+        (left - 1) * cell + lineWidth,
+        (top - 1) * cell + lineWidth,
+        (right - left + 3) * cell,
+        (bottom - top + 3) * cell,
       )
       context.clip()
       paintVelvet(context, this.width, this.height)
       context.restore()
-      // A little lace label: a solid edge, a dotted rule above and below,
-      // a flower at each end, and picots hanging from the bottom.
-      for (let y = hole.top - 1; y <= hole.bottom + 1; y += 1) {
-        for (let x = hole.left - 1; x <= hole.right + 1; x += 1) {
-          const outsideY = y < hole.top || y > hole.bottom
-          const outsideX = x < hole.left || x > hole.right
-          if (outsideX !== outsideY) this.drawBlock(context, x, y)
+      for (let y = top; y <= bottom; y += 1) {
+        for (let x = left; x <= right; x += 1) {
+          const edgeX = Math.min(x - left, right - x)
+          const edgeY = Math.min(y - top, bottom - y)
+          // Rounded corners.
+          if (edgeX + edgeY < 2) continue
+          // A running stitch around the button, one stitch in.
+          const seam = (edgeX === 1 && edgeY >= 1) || (edgeY === 1 && edgeX >= 1)
+          if (seam && edgeX + edgeY > 2 && (x + y) % 2 === 0) continue
+          if (letters.has(`${x},${y}`)) continue
+          this.drawBlock(context, x, y)
         }
       }
-      // A heart at each end, and scalloped picots above and below.
-      const top = Math.round((hole.top + hole.bottom) / 2 - (TINY_HEART.height - 1) / 2)
-      for (const [x, y] of TINY_HEART.cells) {
-        this.drawBlock(context, hole.left - 2 - TINY_HEART.width + x, top + y)
-        this.drawBlock(context, hole.right + 3 + x, top + y)
-      }
-      const radius = cell * 1.2
-      const picots = new Path2D()
-      for (let x = hole.left; x <= hole.right + 1; x += 3) {
-        const px = x * cell + cell / 2
-        const below = (hole.bottom + 2) * cell + lineWidth / 2
-        const above = (hole.top - 1) * cell + lineWidth / 2
-        picots.moveTo(px - radius, below)
-        picots.arc(px, below, radius, Math.PI, 0, true)
-        picots.moveTo(px + radius, above)
-        picots.arc(px, above, radius, 0, Math.PI, true)
-      }
-      context.save()
-      context.lineCap = 'round'
-      context.strokeStyle = THREAD_SHADE
-      context.lineWidth = lineWidth * 1.5
-      context.stroke(picots)
-      context.strokeStyle = THREAD
-      context.lineWidth = lineWidth
-      context.stroke(picots)
-      context.restore()
     }
     soften(this.holesLayer, this.ratio * 0.45)
   }
