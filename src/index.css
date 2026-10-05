@@ -1,0 +1,20 @@
+html {
+  scrollbar-width: thin;
+  scrollbar-color: gray transparent;
+}
+
+html:root {
+  --project-bg: #fff;
+  --background: var(--project-bg);
+  background: var(--project-bg);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--project-bg);
+}
+
+.project-page {
+  background: var(--project-bg);
+}
