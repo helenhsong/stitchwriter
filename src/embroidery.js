@@ -1199,52 +1199,98 @@ function drawFray(context, points, width, amount) {
 }
 
 const HINT = 'just start typing'
-const HINT_FONT = `${STITCH_FONT_STYLE} 15px ${STITCH_FONT}`
+const HINT_FONT = `${STITCH_FONT_STYLE} 19px ${STITCH_FONT}`
 
-// The tiny hint shown before anything is written, set on the first line
-// just after the insertion point, as letters in document pixels.
-function hintLetters(context, geometry) {
-  const { cell } = geometry
+// The tiny hint shown before anything is written, centred in the piece,
+// in document pixels.
+function hintPlacement(context, geometry) {
+  const { cell, inner } = geometry
   context.font = HINT_FONT
-  let x = (geometry.textLeft + 4) * cell
-  const y = (geometry.textTop + geometry.baselineOffset - Math.round(geometry.em * 0.3)) * cell
-  return Array.from(HINT).map((character, index) => {
-    const width = context.measureText(character).width
-    const letter = { character, x, y, width, seed: hash(index * 13 + 3, 7) }
-    x += width
-    return letter
-  })
+  const width = context.measureText(HINT).width
+  return {
+    x: ((inner.left + inner.right + 1) / 2) * cell - width / 2,
+    y: ((inner.top + inner.bottom + 1) / 2) * cell + 5,
+    width,
+  }
 }
 
+const HINT_PULL_MS = 1100
+const HINT_TAIL_MS = 450
+
 // Draw the hint as fine white thread worked over the mesh. Once writing
-// begins, its letters come loose one by one and drop away.
-function drawHint(context, letters, shed) {
-  let visible = false
+// begins it is unpicked: the thread is pulled out from the first letter
+// on, the stitches vanishing behind it while the loose, crimped strand is
+// drawn up and away, until its tail slips free. Returns whether anything
+// is still showing.
+function drawHint(context, geometry, elapsed) {
+  const { x, y, width } = hintPlacement(context, geometry)
+  const pulling = elapsed !== null
+  const t = pulling ? elapsed : 0
+  const progress = pulling ? clamp(t / HINT_PULL_MS, 0, 1) ** 1.4 : 0
+  const pullX = x + width * progress
+  if (pulling && t > HINT_PULL_MS + HINT_TAIL_MS) return false
+
   context.save()
   context.font = HINT_FONT
   context.textBaseline = 'alphabetic'
   context.lineJoin = 'round'
-  for (const letter of letters) {
-    const t = shed === null ? 0 : clamp((shed - letter.seed * 520) / 900, 0, 1)
-    if (t >= 1) continue
-    visible = true
-    const fall = t * t
+  if (progress < 1) {
     context.save()
-    context.globalAlpha = 1 - fall
-    context.translate(
-      letter.x + letter.width / 2 + (letter.seed - 0.5) * 18 * t,
-      letter.y + fall * 46,
-    )
-    context.rotate((letter.seed - 0.5) * 1.6 * t)
+    if (pulling) {
+      context.beginPath()
+      context.rect(pullX, y - 40, width + 40, 80)
+      context.clip()
+    }
     context.strokeStyle = 'rgba(10, 10, 10, 0.85)'
     context.lineWidth = 3
-    context.strokeText(letter.character, -letter.width / 2, 0)
+    context.strokeText(HINT, x, y)
     context.fillStyle = THREAD
-    context.fillText(letter.character, -letter.width / 2, 0)
+    context.fillText(HINT, x, y)
     context.restore()
   }
+
+  if (pulling) {
+    // The loose strand, crimped from having been stitched, straightening
+    // toward the hand that pulls it.
+    const hand = { x: pullX + 90 + 70 * progress, y: y - 170 - 50 * progress }
+    const slip = clamp((t - HINT_PULL_MS) / HINT_TAIL_MS, 0, 1) ** 2
+    const start = {
+      x: lerp(pullX, hand.x, slip),
+      y: lerp(y - 4, hand.y, slip),
+    }
+    const far = { x: hand.x + 400, y: hand.y - 900 }
+    const dx = hand.x - start.x
+    const dy = hand.y - start.y
+    const length = Math.hypot(dx, dy) || 1
+    const nx = -dy / length
+    const ny = dx / length
+    const points = []
+    const count = 48
+    for (let k = 0; k <= count; k += 1) {
+      const u = k / count
+      const crimp = Math.sin(k * 1.9 + t / 35) * 2.4 * (1 - u) ** 1.5
+      points.push({
+        x: start.x + dx * u + nx * crimp,
+        y: start.y + dy * u + ny * crimp + Math.sin(u * Math.PI) * 18,
+      })
+    }
+    points.push(far)
+    const trace = () => {
+      context.beginPath()
+      context.moveTo(points[0].x, points[0].y)
+      for (const point of points.slice(1)) context.lineTo(point.x, point.y)
+    }
+    context.lineCap = 'round'
+    trace()
+    context.strokeStyle = 'rgba(0, 0, 0, 0.55)'
+    context.lineWidth = 2.6
+    context.stroke()
+    context.strokeStyle = THREAD
+    context.lineWidth = 1.3
+    context.stroke()
+  }
   context.restore()
-  return visible
+  return true
 }
 
 export class LaceRenderer {
@@ -1501,11 +1547,11 @@ export class LaceRenderer {
     // letters come loose and drop away.
     if (placeholder && !this.hintShedAt) {
       this.hintShown = true
-      drawHint(context, hintLetters(context, geometry), null)
+      drawHint(context, scene.pieceGeometry, null)
     } else if (this.hintShown && !this.hintGone) {
       this.hintShedAt ??= now
-      const falling = drawHint(context, hintLetters(context, geometry), now - this.hintShedAt)
-      if (!falling || reducedMotion) this.hintGone = true
+      const showing = drawHint(context, scene.pieceGeometry, now - this.hintShedAt)
+      if (!showing || reducedMotion) this.hintGone = true
     }
 
     // The thread comes out of the cell being worked, or rests at the
