@@ -59,8 +59,8 @@ export function createGeometry(viewportWidth, viewportHeight) {
   // The border, by inset from the outline: a solid edge, a floral band of
   // vines, flowers and leaves, then a solid inner line.
   const band = compact
-    ? { start: 2, end: 14, line: 16 }
-    : { start: 2, end: 16, line: 18 }
+    ? { start: 2, end: 12, line: 14 }
+    : { start: 2, end: 12, line: 14 }
   // The writing sits in the straight-sided middle of the piece, inside the
   // border and clear of the arches.
   const clear = band.line + 3
@@ -635,20 +635,36 @@ function parseChart(rows) {
   return { width, height: rows.length, cells }
 }
 
-const ROSE = parseChart([
-  '....XXXXX....',
-  '..XXXXXXXXX..',
-  '.XXX.....XXX.',
-  '.XX.XXXXX.XX.',
-  'XX.XX...XX.XX',
-  'XX.X.XXX.X.XX',
-  'XX.X.X.X.X.XX',
-  'XX.XX..X.X.XX',
-  '.XX.XXX.XX.X.',
-  '.XXX...XX.XX.',
-  '..XXXXX..XX..',
-  '...XXXXXXX...',
-  '.....XXX.....',
+// The corner spray: an eight-petalled flower where the sides meet, with an
+// arm running along each side, leaf pairs on a stem ending in a tulip cup.
+const CORNER_FLOWER = parseChart([
+  '..X...X..',
+  '.X.X.X.X.',
+  'X...X...X',
+  '.X.XXX.X.',
+  '..XX.XX..',
+  '.X.XXX.X.',
+  'X...X...X',
+  '.X.X.X.X.',
+  '..X...X..',
+])
+
+// One arm of the corner spray, from its tip (row 0) back to the flower.
+const CORNER_ARM = parseChart([
+  '.X...X.',
+  '.XX.XX.',
+  '.X.X.X.',
+  '..XXX..',
+  '...X...',
+  'X..X..X',
+  '.X.X.X.',
+  '..XXX..',
+  '...X...',
+  'X..X..X',
+  '.X.X.X.',
+  '..XXX..',
+  '...X...',
+  '...X...',
 ])
 
 const STAR_FLOWER = parseChart([
@@ -694,28 +710,24 @@ const BOW = parseChart([
 // tulips, a solid rule and a row of picots. Rows run from the outer edge
 // of the band (0) inward.
 const BORDER_REPEAT = parseChart([
-  '........X.......',
-  '.......XXX......',
-  'X...X..XXX..X...',
-  'XX.XX.XXXXX.XX.X',
-  'X..XXX.XXX.XXX..',
-  '...XXXX.X.XXXX..',
-  '....XXXX.XXXX...',
-  '.....XXXXXXX....',
-  '......XXXXX.....',
-  '.X......X......X',
-  '.XX.....X.....XX',
-  '..XX...XXX...XX.',
-  '...XXXXX.XXXXX..',
-  'XXXXXXXXXXXXXXXX',
-  'X.X.X.X.X.X.X.X.',
+  '......X.......',
+  '.....X.X......',
+  '..X.X...X.X...',
+  '..XX.....XX..X',
+  '...X.X.X.X..X.',
+  '....X.X.X....X',
+  '......X.......',
+  '.X....X....X..',
+  '..XX..X..XX...',
+  'XXXXXXXXXXXXXX',
+  'X.X.X.X.X.X.X.',
 ])
 
 // The motif band inside the border: the running tulip pattern along every
 // side, following the arches, with a rose at each corner. Everything is
 // clipped to the band.
 function bandCells(geometry) {
-  const { frame, band, notch, arch } = geometry
+  const { frame, band, arch } = geometry
   const width = band.end - band.start + 1
   const centre = band.start + (width - 1) / 2
   const seen = new Set()
@@ -736,7 +748,8 @@ function bandCells(geometry) {
   // Each side, as a position along it (u) and a depth into the band from
   // its outer edge (v). The pattern grows outward from the inner rule.
   const offset = Math.max(0, Math.round((width - BORDER_REPEAT.height) / 2))
-  const corner = notch + band.end + 2
+  const armStart = Math.ceil(CORNER_FLOWER.width / 2)
+  const corner = Math.round(centre) + armStart + CORNER_ARM.height + 2
   const sides = [
     { from: frame.left + corner, to: frame.right - corner, at: (u, v) => [u, Math.round(frame.top + archOffset(geometry, u)) + band.start + v] },
     { from: frame.left + corner, to: frame.right - corner, at: (u, v) => [u, Math.round(frame.bottom - archOffset(geometry, u)) - band.start - v] },
@@ -751,7 +764,7 @@ function bandCells(geometry) {
     // symmetric.
     const middle = Math.round((side.from + side.to) / 2)
     for (let u = side.from; u <= side.to; u += 1) {
-      const column = (((u - middle + 8) % period) + period) % period
+      const column = (((u - middle + 6) % period) + period) % period
       for (const y of columns[column]) {
         const [x, gy] = side.at(u, y + offset)
         add(x, gy)
@@ -759,12 +772,21 @@ function bandCells(geometry) {
     }
   }
 
-  // A rose tucked into the band at each corner.
+  // A flower spray at each corner, its arms reaching along both sides.
   for (const [cx, cy] of outlineCorners(geometry)) {
     const sx = cx < (frame.left + frame.right) / 2 ? 1 : -1
     const sy = cy < (frame.top + frame.bottom) / 2 ? 1 : -1
-    const reach = notch + centre
-    stamp(ROSE, cx + sx * reach * 0.72, cy + sy * reach * 0.72)
+    const fx = cx + sx * centre
+    const fy = cy + sy * centre
+    stamp(CORNER_FLOWER, fx, fy)
+    const half = (CORNER_ARM.width - 1) / 2
+    for (const [dx, dy] of [[sx, 0], [0, sy]]) {
+      for (const [ax, ar] of CORNER_ARM.cells) {
+        const along = armStart + (CORNER_ARM.height - 1 - ar)
+        const across = ax - half
+        add(Math.round(fx + dx * along + dy * across), Math.round(fy + dy * along + dx * across))
+      }
+    }
   }
   return cells
 }
