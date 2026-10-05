@@ -6,13 +6,13 @@ export const STITCH_FONT = '"Cormorant Garamond", Georgia, serif'
 export const STITCH_FONT_STYLE = 'italic 700'
 export const HEADER_HEIGHT = 66
 
-const VELVET = '#0d0c0b'
-const THREAD_DEEP = '#9c927e'
-const THREAD_SHADE = '#cdc4b0'
-const THREAD = '#eee8da'
-const THREAD_LIGHT = '#f6f1e5'
-const THREAD_HIGHLIGHT = '#fffcf4'
-const TWIST = 'rgba(120, 106, 84, 0.3)'
+const VELVET = '#0a0a0a'
+const THREAD_DEEP = '#8e8d89'
+const THREAD_SHADE = '#cfcecb'
+const THREAD = '#f3f3f1'
+const THREAD_LIGHT = '#fafaf9'
+const THREAD_HIGHLIGHT = '#ffffff'
+const TWIST = 'rgba(110, 110, 106, 0.26)'
 
 const SUBSAMPLE = 8
 const COVERAGE = 0.42
@@ -59,7 +59,7 @@ export function createGeometry(viewportWidth, viewportHeight) {
     rows,
     frame,
     inner,
-    lineWidth: Math.max(1.4, cell * 0.26),
+    lineWidth: Math.max(1, cell * 0.15),
     lineHeight: Math.round(em * 1.3),
     baselineOffset: em,
     textLeft: inner.left + padX,
@@ -270,9 +270,9 @@ function paintVelvet(context, width, height) {
   for (let i = 0; i < image.data.length; i += 4) {
     const pixel = i / 4
     const shade = hash(pixel % 96, Math.floor(pixel / 96))
-    image.data[i] = 40
+    image.data[i] = 36
     image.data[i + 1] = 36
-    image.data[i + 2] = 32
+    image.data[i + 2] = 36
     image.data[i + 3] = shade > 0.55 ? Math.round((shade - 0.55) * 70) : 0
   }
   tileContext.putImageData(image, 0, 0)
@@ -287,7 +287,7 @@ function paintVelvet(context, width, height) {
     height / 2,
     Math.max(width, height) * 0.75,
   )
-  vignette.addColorStop(0, 'rgba(38, 33, 28, 0.35)')
+  vignette.addColorStop(0, 'rgba(30, 30, 30, 0.3)')
   vignette.addColorStop(1, 'rgba(0, 0, 0, 0.35)')
   context.fillStyle = vignette
   context.fillRect(0, 0, width, height)
@@ -313,7 +313,7 @@ function strokeStrand(context, segments, width, tone) {
 
   context.lineCap = 'round'
   context.save()
-  context.translate(0.7, 1.2)
+  context.translate(0.5, 0.9)
   context.strokeStyle = 'rgba(0, 0, 0, 0.55)'
   context.lineWidth = width * 1.15
   context.stroke(path)
@@ -328,7 +328,7 @@ function strokeStrand(context, segments, width, tone) {
   context.lineWidth = width * 0.8
   context.stroke(path)
   context.translate(-width * 0.1, -width * 0.1)
-  context.strokeStyle = 'rgba(255, 252, 244, 0.55)'
+  context.strokeStyle = 'rgba(255, 255, 255, 0.55)'
   context.lineWidth = width * 0.22
   context.stroke(path)
   context.restore()
@@ -361,6 +361,8 @@ function strokeTwist(context, segments, width) {
 
 function paintMesh(context, geometry) {
   const { cols, rows, lineWidth } = geometry
+  context.save()
+  context.globalAlpha = 0.82
   const buckets = [[], [], []]
   const knots = []
 
@@ -377,7 +379,9 @@ function paintMesh(context, geometry) {
     }
   }
 
-  const tones = [THREAD, THREAD_LIGHT, '#e4dccb']
+  // Open mesh is a little greyer than the solid blocks, as in real
+  // filet lace, so the worked design stands out.
+  const tones = ['#d8d8d5', '#e2e2df', '#cfcfcc']
   buckets.forEach((segments, index) =>
     strokeStrand(context, segments, lineWidth, tones[index]),
   )
@@ -387,14 +391,14 @@ function paintMesh(context, geometry) {
   const knotPath = new Path2D()
   const knotHighlight = new Path2D()
   for (const point of knots) {
-    knotPath.moveTo(point.x + lineWidth * 0.62, point.y)
-    knotPath.arc(point.x, point.y, lineWidth * 0.62, 0, Math.PI * 2)
+    knotPath.moveTo(point.x + lineWidth * 0.5, point.y)
+    knotPath.arc(point.x, point.y, lineWidth * 0.5, 0, Math.PI * 2)
     knotHighlight.moveTo(point.x - lineWidth * 0.02, point.y - lineWidth * 0.2)
     knotHighlight.arc(point.x - lineWidth * 0.2, point.y - lineWidth * 0.2, lineWidth * 0.18, 0, Math.PI * 2)
   }
   context.fillStyle = THREAD_SHADE
   context.fill(knotPath)
-  context.fillStyle = 'rgba(255, 252, 244, 0.6)'
+  context.fillStyle = 'rgba(255, 255, 255, 0.5)'
   context.fill(knotHighlight)
 
   // Stray fibres.
@@ -418,9 +422,10 @@ function paintMesh(context, geometry) {
       )
     }
   }
-  context.strokeStyle = 'rgba(232, 225, 208, 0.3)'
+  context.strokeStyle = 'rgba(225, 225, 222, 0.22)'
   context.lineWidth = 0.45
   context.stroke(fuzz)
+  context.restore()
 }
 
 // One filled filet block: three treble posts topped by a chain, with
@@ -439,10 +444,10 @@ function makeBlockSprites(geometry, ratio) {
     for (let k = 0; k < 3; k += 1) {
       const x = k * post
       const shade = context.createLinearGradient(x, 0, x + post, 0)
-      shade.addColorStop(0, '#d9d1be')
+      shade.addColorStop(0, '#e2e1de')
       shade.addColorStop(0.35, variant % 2 ? THREAD_LIGHT : THREAD)
       shade.addColorStop(0.55, THREAD_HIGHLIGHT)
-      shade.addColorStop(1, '#d4cbb7')
+      shade.addColorStop(1, '#dddcd8')
       context.fillStyle = shade
       context.fillRect(x + 0.25, 0, post - 0.5, size)
 
@@ -574,7 +579,7 @@ function bezierPoints(p0, p1, p2, p3, count) {
 // insertion point and hanging down under its own weight.
 function drawThread(context, origin, geometry, swing) {
   const { cell } = geometry
-  const width = Math.max(3.6, cell * 0.72)
+  const width = Math.max(2.4, cell * 0.42)
   const length = Math.max(54, geometry.em * cell * 1.05)
   const end = {
     x: origin.x + cell * 1.6 + swing * cell * 1.4,
@@ -614,7 +619,7 @@ function drawThread(context, origin, geometry, swing) {
   context.lineWidth = width * 0.72
   context.stroke()
   context.translate(-width * 0.12, -width * 0.06)
-  context.strokeStyle = 'rgba(255, 252, 244, 0.75)'
+  context.strokeStyle = 'rgba(255, 255, 255, 0.75)'
   context.lineWidth = width * 0.22
   context.stroke()
   context.translate(width * 0.12, width * 0.06)
@@ -792,7 +797,7 @@ export class LaceRenderer {
         if (placeholder) {
           // Pattern-chart dots, as if the design were inked onto the lace.
           const dot = Math.max(1.5, cell * 0.36)
-          context.fillStyle = 'rgba(232, 225, 208, 0.42)'
+          context.fillStyle = 'rgba(240, 240, 238, 0.42)'
           context.beginPath()
           context.arc(
             point.gx * cell + lineWidth + (cell - lineWidth) / 2,

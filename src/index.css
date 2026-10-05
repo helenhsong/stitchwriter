@@ -1,12 +1,12 @@
 html {
   scrollbar-width: thin;
-  scrollbar-color: #6f685c transparent;
+  scrollbar-color: #6b6b67 transparent;
 }
 
 html:root {
-  --project-bg: #0c0b0a;
-  --project-fg: #f3ecdc;
-  --project-muted-fg: #b8ae9b;
+  --project-bg: #0a0a0a;
+  --project-fg: #f3f3f1;
+  --project-muted-fg: #b9b9b5;
   --project-hover-fg: #ffffff;
   /* Let the lace show through the fixed header; the README view below puts
      the solid page colour back. */
