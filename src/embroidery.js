@@ -44,9 +44,11 @@ export function createGeometry(viewportWidth, viewportHeight) {
   // (fallback punctuation, spacing, the caret) to match them.
   const em = 10
   const motif = compact ? 7 : 9
-  // Straight sides with stepped corners, like a filet tablecloth.
-  const arch = 0
-  const notch = compact ? 4 : 6
+  // How far the top and bottom arch and the sides bow out, and the size of
+  // the curls along the border.
+  const arch = compact ? 8 : 12
+  const sway = compact ? 4 : 6
+  const curl = compact ? 4 : 6
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
   const headerRows = Math.ceil(HEADER_HEIGHT / cell)
@@ -58,19 +60,16 @@ export function createGeometry(viewportWidth, viewportHeight) {
   const frame = {
     left: side,
     right: side + across - 1,
-    top: headerRows + Math.round(rows * (compact ? 0.06 : 0.12)),
+    // The arch, the bow and the caption all sit above the piece's top, so
+    // leave room for them under the header.
+    top: headerRows + arch + Math.round(rows * (compact ? 0.2 : 0.12)),
     bottom: Math.floor(viewportHeight / cell) - 1 - Math.round(rows * (compact ? 0.1 : 0.14)),
   }
-  // The border, by inset from the outline: a double rule (a solid edge two
-  // stitches wide, an open row and a single line), a floral band, then an
-  // inner line.
-  const band = { start: 5, end: 15, line: 17 }
-  // The writing sits in the straight-sided middle of the piece, inside the
-  // border and clear of the arches.
-  const clear = band.line + 3
+  // The writing sits inside the scroll border, clear of its curls.
+  const clear = Math.ceil(curl * 2) + 4
   const inner = {
-    left: frame.left + clear,
-    right: frame.right - clear,
+    left: frame.left + sway + clear,
+    right: frame.right - sway - clear,
     top: frame.top + arch + clear,
     bottom: frame.bottom - arch - clear,
   }
@@ -82,8 +81,8 @@ export function createGeometry(viewportWidth, viewportHeight) {
     em,
     motif,
     arch,
-    notch,
-    band,
+    sway,
+    curl,
     cols,
     rows,
     frame,
@@ -543,65 +542,8 @@ function makeBlockSprites(geometry, ratio) {
   return sprites
 }
 
-// The piece's outline. archOffset lifts the top and bottom edges into
-// arches when geometry.arch is set; the corners are cut away in steps.
-function archOffset(geometry, x) {
-  const { frame, arch } = geometry
-  const middle = (frame.left + frame.right) / 2
-  const half = (frame.right - frame.left) * 0.24
-  const t = (x - middle) / half
-  if (Math.abs(t) >= 1) return arch
-  return arch * (1 - (Math.cos(Math.PI * t) + 1) / 2)
-}
-
-// The inner lines step their corners in by only a couple of stitches.
-const INNER_NOTCH = 2
-
-function outlineCorners(geometry) {
-  const { frame, arch } = geometry
-  return [
-    [frame.left, frame.top + arch],
-    [frame.right, frame.top + arch],
-    [frame.left, frame.bottom - arch],
-    [frame.right, frame.bottom - arch],
-  ]
-}
-
-function insideOutline(geometry, x, y, inset, notch = geometry.notch) {
-  const { frame } = geometry
-  if (x < frame.left + inset || x > frame.right - inset) return false
-  const rise = archOffset(geometry, x)
-  if (y < frame.top + rise + inset || y > frame.bottom - rise - inset) return false
-  // Each corner is stepped off one stitch at a time. Every inset moves the
-  // steps in by two so the rules stay a solid staircase. Inner lines pass
-  // a smaller notch for a shallower step.
-  for (const [cx, cy] of outlineCorners(geometry)) {
-    if (Math.abs(x - cx) + Math.abs(y - cy) < notch + inset * 2) return false
-  }
-  return true
-}
-
-// Border cells in viewport-grid coordinates: a double rule around the
-// outline, an inner line, and a dotted line of single blocks inside it.
-function frameCells(geometry) {
-  const { frame, band } = geometry
-  const cells = []
-  const ring = (x, y, from, to, notch) =>
-    insideOutline(geometry, x, y, from, notch) &&
-    !insideOutline(geometry, x, y, to + 1, notch)
-  for (let y = frame.top; y <= frame.bottom; y += 1) {
-    for (let x = frame.left; x <= frame.right; x += 1) {
-      const edge = ring(x, y, 0, 1) || ring(x, y, 3, 3)
-      const line = ring(x, y, band.line, band.line, INNER_NOTCH)
-      const dots = ring(x, y, band.line + 2, band.line + 2, INNER_NOTCH) && (x + y) % 2 === 0
-      if (edge || line || dots) cells.push([x, y])
-    }
-  }
-  return cells
-}
-
 // Hand-charted filet motifs, in the style of a filet pattern sheet: a
-// corner rose, a heart and a ribbon bow. X is a filled block.
+// heart and a ribbon bow. X is a filled block.
 function parseChart(rows) {
   const width = Math.max(...rows.map((row) => row.length))
   const cells = rows.flatMap((row, y) =>
@@ -609,41 +551,6 @@ function parseChart(rows) {
   )
   return { width, height: rows.length, cells }
 }
-
-// The corner spray: an open filet rose where the sides meet, with
-// an arm running along each side, leaf pairs on a stem ending in a tulip
-// cup.
-const CORNER_FLOWER = parseChart([
-  '...XX.XX...',
-  '..X..X..X..',
-  '.X.XX.XX.X.',
-  'X.X.....X.X',
-  'X.X..X..X.X',
-  '.X..XXX..X.',
-  'X.X..X..X.X',
-  'X.X.....X.X',
-  '.X.XX.XX.X.',
-  '..X..X..X..',
-  '...XX.XX...',
-])
-
-// One arm of the corner spray, from its tip (row 0) back to the flower.
-const CORNER_ARM = parseChart([
-  '.X...X.',
-  '.XX.XX.',
-  '.X.X.X.',
-  '..XXX..',
-  '...X...',
-  'X..X..X',
-  '.X.X.X.',
-  '..XXX..',
-  '...X...',
-  'X..X..X',
-  '.X.X.X.',
-  '..XXX..',
-  '...X...',
-  '...X...',
-])
 
 const TINY_HEART = parseChart([
   'XX.XX',
@@ -673,101 +580,125 @@ const BOW = parseChart([
   '....X..X.........X..X....',
 ])
 
-// One repeat of the border's running pattern, charted like a folk filet
-// border: a tulip on a stem with curling leaves, a small diamond between
-// tulips, a solid rule and a row of picots. Rows run from the outer edge
-// of the band (0) inward.
-const BORDER_REPEAT = parseChart([
-  '......X.......',
-  '.....X.X......',
-  '..X.X...X.X...',
-  '..XX.....XX..X',
-  '...X.X.X.X..X.',
-  '....X.X.X....X',
-  '......X.......',
-  '.X....X....X..',
-  '..XX..X..XX...',
-  'XXXXXXXXXXXXXX',
-  'X.X.X.X.X.X.X.',
+const HEART = parseChart([
+  '..XXX...XXX..',
+  '.XXXXX.XXXXX.',
+  'XXXXXXXXXXXXX',
+  'XXXXXXXXXXXXX',
+  'XXXXXXXXXXXXX',
+  '.XXXXXXXXXXX.',
+  '..XXXXXXXXX..',
+  '...XXXXXXX...',
+  '....XXXXX....',
+  '.....XXX.....',
+  '......X......',
 ])
 
-// The motif band inside the border: the running tulip pattern along every
-// side, following the arches, with a rose at each corner. Everything is
-// clipped to the band.
-function bandCells(geometry) {
-  const { frame, band, arch } = geometry
-  const width = band.end - band.start + 1
-  const centre = band.start + (width - 1) / 2
+// The piece's outline: one thread scrolling around the writing, after a
+// filet frame chart. The top and bottom swell into rounded arches, the
+// sides bow outward, curls turn in along every edge, and a heart sits at
+// each corner.
+function scrollCells(geometry) {
+  const { frame, arch, sway, curl } = geometry
   const seen = new Set()
   const cells = []
-  const add = (x, y) => {
-    const key = `${x},${y}`
+  const mark = (gx, gy) => {
+    const key = `${gx},${gy}`
     if (seen.has(key)) return
-    if (
-      !insideOutline(geometry, x, y, band.start) ||
-      insideOutline(geometry, x, y, band.end + 1, INNER_NOTCH)
-    ) {
-      return
-    }
     seen.add(key)
-    cells.push([x, y])
+    cells.push([gx, gy])
   }
-  const stamp = (chart, x, y) => {
-    const left = Math.round(x - (chart.width - 1) / 2)
-    const top = Math.round(y - (chart.height - 1) / 2)
-    for (const [dx, dy] of chart.cells) add(left + dx, top + dy)
+  // The scrolling thread is worked two stitches wide so it reads as a
+  // cord rather than a dotted line.
+  const add = (x, y) => {
+    const gx = Math.round(x)
+    const gy = Math.round(y)
+    mark(gx, gy)
+    mark(gx + 1, gy)
+    mark(gx, gy + 1)
+    mark(gx + 1, gy + 1)
+  }
+  // Sample a curve finely so the thread reads as a continuous line of
+  // single stitches.
+  const trace = (point, length) => {
+    const steps = Math.max(8, Math.ceil(length * 3))
+    for (let i = 0; i <= steps; i += 1) add(...point(i / steps))
+  }
+  const stamp = (chart, cx, cy, flip = false) => {
+    const left = Math.round(cx - (chart.width - 1) / 2)
+    const top = Math.round(cy - (chart.height - 1) / 2)
+    for (const [x, y] of chart.cells) mark(left + x, top + (flip ? chart.height - 1 - y : y))
   }
 
-  // Each side, as a position along it (u) and a depth into the band from
-  // its outer edge (v). The pattern grows outward from the inner rule.
-  const offset = Math.max(0, Math.round((width - BORDER_REPEAT.height) / 2))
-  const armStart = Math.ceil(CORNER_FLOWER.width / 2)
-  // The flower sits on the stepped corner, as far along the diagonal as
-  // the steps cut in.
-  const diagonal = centre + geometry.notch / 2
-  const corner = Math.round(diagonal) + armStart + CORNER_ARM.height + 2
-  const sides = [
-    { from: frame.left + corner, to: frame.right - corner, at: (u, v) => [u, Math.round(frame.top + archOffset(geometry, u)) + band.start + v] },
-    { from: frame.left + corner, to: frame.right - corner, at: (u, v) => [u, Math.round(frame.bottom - archOffset(geometry, u)) - band.start - v] },
-    { from: frame.top + arch + corner, to: frame.bottom - arch - corner, at: (u, v) => [frame.left + band.start + v, u] },
-    { from: frame.top + arch + corner, to: frame.bottom - arch - corner, at: (u, v) => [frame.right - band.start - v, u] },
-  ]
-  const columns = Array.from({ length: BORDER_REPEAT.width }, () => [])
-  for (const [x, y] of BORDER_REPEAT.cells) columns[x].push(y)
-  const period = BORDER_REPEAT.width
-  for (const side of sides) {
-    // Centre a tulip on the middle of each side so the pattern is
-    // symmetric.
-    const middle = Math.round((side.from + side.to) / 2)
-    for (let u = side.from; u <= side.to; u += 1) {
-      const column = (((u - middle + 6) % period) + period) % period
-      for (const y of columns[column]) {
-        const [x, gy] = side.at(u, y + offset)
-        add(x, gy)
+  const left = frame.left + sway
+  const right = frame.right - sway
+  const top = frame.top + arch
+  const bottom = frame.bottom - arch
+  const middleX = (frame.left + frame.right) / 2
+  const middleY = (top + bottom) / 2
+  const width = right - left
+  const height = bottom - top
+
+  // Rounded arches over the top and under the bottom.
+  const archAt = (t) => arch * (1 - (2 * t - 1) ** 2)
+  trace((t) => [left + width * t, top - archAt(t)], width + arch * 2)
+  trace((t) => [left + width * t, bottom + archAt(t)], width + arch * 2)
+  // Sides bowing gently outward.
+  const bowAt = (t) => sway * (1 - (2 * t - 1) ** 2)
+  trace((t) => [left - bowAt(t), top + height * t], height + sway * 2)
+  trace((t) => [right + bowAt(t), top + height * t], height + sway * 2)
+
+  // A curl leaving the thread at (x, y) and winding inward, toward
+  // (nx, ny), clockwise or not.
+  const spiral = (x, y, nx, ny, clockwise) => {
+    const cx = x + nx * curl
+    const cy = y + ny * curl
+    const start = Math.atan2(y - cy, x - cx)
+    const turn = clockwise ? 1 : -1
+    const sweep = Math.PI * 1.7
+    trace((t) => {
+      const angle = start + turn * sweep * t
+      const radius = curl * (1 - t * 0.6)
+      return [cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius]
+    }, curl * 6)
+  }
+
+  // Curls along the top and bottom, a little in from each corner.
+  for (const t of [0.2, 0.8]) {
+    const x = left + width * t
+    const inward = t < 0.5
+    spiral(x, top - archAt(t), 0, 1, !inward)
+    spiral(x, bottom + archAt(t), 0, -1, inward)
+  }
+  // A pair of curls at the middle of each side, one turning up and one
+  // down, and more near the corners once the piece is tall enough.
+  const sideCurls = height > curl * 14 ? [0.5, 0.18, 0.82] : [0.5]
+  for (const t of sideCurls) {
+    const y = top + height * t
+    const pair = t === 0.5
+    for (const [x, nx] of [[left - bowAt(t), 1], [right + bowAt(t), -1]]) {
+      if (pair) {
+        spiral(x, y - 1, nx, -0.4, nx < 0)
+        spiral(x, y + 1, nx, 0.4, nx > 0)
+      } else {
+        spiral(x, y, nx, 0, (t < 0.5) === (nx > 0))
       }
     }
   }
+  // A small double curl under the bottom arch, mirroring the bow on top.
+  spiral(middleX - 1, bottom + arch, 0, -1, false)
+  spiral(middleX + 1, bottom + arch, 0, -1, true)
 
-  // A flower spray at each corner, its arms reaching along both sides.
-  for (const [cx, cy] of outlineCorners(geometry)) {
-    const sx = cx < (frame.left + frame.right) / 2 ? 1 : -1
-    const sy = cy < (frame.top + frame.bottom) / 2 ? 1 : -1
-    const fx = cx + sx * diagonal
-    const fy = cy + sy * diagonal
-    stamp(CORNER_FLOWER, fx, fy)
-    const half = (CORNER_ARM.width - 1) / 2
-    // While the piece is short, the arms up the sides would meet, so they
-    // wait until there is room for both.
-    const sideRoom = (frame.bottom - frame.top) / 2 - arch - diagonal
-    const reach = armStart + CORNER_ARM.height
-    const arms = sideRoom >= reach ? [[sx, 0], [0, sy]] : [[sx, 0]]
-    for (const [dx, dy] of arms) {
-      for (const [ax, ar] of CORNER_ARM.cells) {
-        const along = armStart + (CORNER_ARM.height - 1 - ar)
-        const across = ax - half
-        add(Math.round(fx + dx * along + dy * across), Math.round(fy + dy * along + dx * across))
-      }
-    }
+  // A heart at each corner, where the edges meet.
+  for (const [x, y, flip] of [
+    [left, top, false],
+    [right, top, false],
+    [left, bottom, true],
+    [right, bottom, true],
+  ]) {
+    const sx = x < middleX ? -1 : 1
+    const sy = y < middleY ? -1 : 1
+    stamp(HEART, x + sx * 3, y + sy * 3, flip)
   }
   return cells
 }
@@ -780,7 +711,7 @@ function ornamentCells(geometry) {
   // A ribbon bow tied over the top edge.
   const middle = (frame.left + frame.right) / 2
   const ribbon = BOW
-  const ribbonTop = frame.top - ribbon.height + 3
+  const ribbonTop = frame.top - geometry.arch - ribbon.height + 2
   for (const [x, y] of ribbon.cells) {
     cells.push([Math.round(middle - ribbon.width / 2) + x, ribbonTop + y])
   }
@@ -810,56 +741,6 @@ const CAPTION_EM = 12
 export const CAPTION_FONT = 'Lora, Georgia, serif'
 export const CAPTION_FONT_STYLE = 'italic 400'
 const CAPTION_FACE = { style: CAPTION_FONT_STYLE, family: CAPTION_FONT, thicken: 0.35 }
-
-// Picot loops all around the outside of the border: the scalloped edge
-// that finishes a piece of lace.
-function paintPicots(context, geometry) {
-  const { frame, cell, lineWidth, notch } = geometry
-  const radius = cell * 0.95
-  const path = new Path2D()
-  const loop = (gx, gy, angle) => {
-    const x = gx * cell + lineWidth / 2
-    const y = gy * cell + lineWidth / 2
-    path.moveTo(x + Math.cos(angle - Math.PI / 2) * radius, y + Math.sin(angle - Math.PI / 2) * radius)
-    path.arc(x, y, radius, angle - Math.PI / 2, angle + Math.PI / 2)
-  }
-  const corners = outlineCorners(geometry)
-  const clearOfNotches = (x, y) =>
-    corners.every(([cx, cy]) => Math.abs(x - cx) + Math.abs(y - cy) > notch + 1)
-
-  // Top and bottom edges follow the arches.
-  for (let x = frame.left + 1; x <= frame.right; x += 2) {
-    const rise = archOffset(geometry, x)
-    const slope = (archOffset(geometry, x + 0.5) - archOffset(geometry, x - 0.5))
-    const top = frame.top + rise
-    const bottom = frame.bottom + 1 - rise
-    if (clearOfNotches(x, top)) loop(x, top, -Math.PI / 2 + Math.atan(slope))
-    if (clearOfNotches(x, bottom)) loop(x, bottom, Math.PI / 2 + Math.atan(slope))
-  }
-  for (let y = frame.top + 1; y <= frame.bottom; y += 2) {
-    if (clearOfNotches(frame.left, y)) loop(frame.left, y, Math.PI)
-    if (clearOfNotches(frame.right + 1, y)) loop(frame.right + 1, y, 0)
-  }
-  // Along each stepped corner, pointing out from it.
-  for (const [cx, cy] of corners) {
-    const sx = cx < (frame.left + frame.right) / 2 ? 1 : -1
-    const sy = cy < (frame.top + frame.bottom) / 2 ? 1 : -1
-    const angle = Math.atan2(-sy, -sx)
-    for (let k = 1; k < notch; k += 2) {
-      loop(cx + sx * k + (sx < 0 ? 1 : 0), cy + sy * (notch - k) + (sy < 0 ? 1 : 0), angle)
-    }
-  }
-
-  context.save()
-  context.lineCap = 'round'
-  context.strokeStyle = THREAD_SHADE
-  context.lineWidth = lineWidth * 1.5
-  context.stroke(path)
-  context.strokeStyle = THREAD
-  context.lineWidth = lineWidth * 1.0
-  context.stroke(path)
-  context.restore()
-}
 
 // Soften a finished layer slightly: lace thread is fuzzy, never crisp.
 function soften(layer, amount) {
@@ -1246,8 +1127,7 @@ export class LaceRenderer {
     const ornamentKey = `${pieceGeometry.frame.bottom}`
     if (ornamentKey !== this.ornamentKey) {
       this.ornaments = [
-        ...frameCells(pieceGeometry),
-        ...bandCells(pieceGeometry),
+        ...scrollCells(pieceGeometry),
         ...ornamentCells(pieceGeometry),
       ]
       this.ornamentKey = ornamentKey
@@ -1255,10 +1135,6 @@ export class LaceRenderer {
     for (const [x, y] of this.ornaments) {
       if (inBand(x, y - bandStart)) this.drawBlock(context, x, y - bandStart)
     }
-    context.save()
-    context.translate(0, -bandStart * cell)
-    paintPicots(context, pieceGeometry)
-    context.restore()
 
     for (const item of layout.characters) {
       if (!item.glyph || animating.has(item.index)) continue
