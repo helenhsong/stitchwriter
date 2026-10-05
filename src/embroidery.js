@@ -1322,6 +1322,7 @@ export class LaceRenderer {
     const { cells } = item.glyph
     const baseRow = geometry.baselineOffset + item.line * geometry.lineHeight
     const shift = pulled * cells.length
+    let end = null
     for (let k = cells.length - 1; k >= 0; k -= 1) {
       const at = k - shift
       if (at < 0) break
@@ -1332,8 +1333,11 @@ export class LaceRenderer {
         item.col + from[0] + (to[0] - from[0]) * f,
         baseRow + from[1] + (to[1] - from[1]) * f,
       )
+      // The loose end leaves the lace at the last stitch still in place.
+      end ??= this.cellCenter(gx, gy)
       if (gy >= firstRow && gy <= lastRow) this.drawBlock(context, gx, gy, 1, k)
     }
+    return end
   }
 
   cellCenter(gx, gy) {
@@ -1411,13 +1415,15 @@ export class LaceRenderer {
     // A deleted letter is pulled out like a single thread: the run of
     // stitches slides back along the path it was worked in and is drawn
     // out, last stitch first, picking up speed as it goes.
+    let pulling = null
     for (const ghost of scene.ghosts ?? []) {
       if (now >= ghost.end || now < ghost.start) {
         if (now < ghost.start) this.drawGhostAt(context, ghost, 0, firstRow, lastRow)
         continue
       }
       const t = clamp((now - ghost.start) / ghost.duration, 0, 1)
-      this.drawGhostAt(context, ghost, t * t, firstRow, lastRow)
+      const end = this.drawGhostAt(context, ghost, t * t, firstRow, lastRow)
+      if (end) pulling = end
     }
 
     // The thread comes out of the cell being worked, or rests at the
@@ -1437,6 +1443,11 @@ export class LaceRenderer {
       const { gx, gy } = this.toGrid(item.col + dx, baseRow + dy)
       target = this.cellCenter(gx, gy)
       working = true
+    } else if (pulling) {
+      // Unravelling: the thread runs taut from the stitch being pulled out.
+      target = pulling
+      working = true
+      stitch = { index: stitch.index, progress: 1 }
     } else {
       // At rest the thread stays where the last letter before the cursor
       // was finished: its final stitch. With nothing stitched just before
