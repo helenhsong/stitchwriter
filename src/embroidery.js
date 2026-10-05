@@ -2,8 +2,8 @@
 // and text is "stitched" by filling cells solid, the way filet crochet
 // pictures are worked.
 
-export const STITCH_FONT = '"Cormorant Garamond", Georgia, serif'
-export const STITCH_FONT_STYLE = 'italic 600'
+export const STITCH_FONT = '"Playfair Display", Georgia, serif'
+export const STITCH_FONT_STYLE = 'italic 400'
 export const HEADER_HEIGHT = 66
 
 const VELVET = '#0a0a0a'
@@ -16,6 +16,9 @@ const TWIST = 'rgba(110, 110, 106, 0.26)'
 
 const SUBSAMPLE = 8
 const COVERAGE = 0.42
+// How much hairlines are thickened before charting, in cells. Just enough
+// that fine serifs and joins survive as single stitches.
+const THICKEN = 0.2
 const CELL_FILL_MS = 110
 const BLOCK_VARIANTS = 6
 // The mesh pattern repeats every this many rows, so the open lace can
@@ -108,7 +111,7 @@ function getMeasureContext(em, face) {
 // origin column and baseline row, and are ordered the way they are worked:
 // row by row, turning back at the end of each row like crochet.
 export function getGlyph(character, em, face) {
-  const cacheKey = `${em}:${face?.style ?? ''}${face?.family ?? ''}:${character}`
+  const cacheKey = `${em}:${face?.family ?? ''}:${character}`
   const cached = glyphCache.get(cacheKey)
   if (cached) return cached
 
@@ -130,7 +133,7 @@ export function getGlyph(character, em, face) {
   // Thicken hairlines so thin serifs and joins survive at filet resolution.
   context.strokeStyle = '#fff'
   context.lineJoin = 'round'
-  context.lineWidth = SUBSAMPLE * 0.35
+  context.lineWidth = SUBSAMPLE * (face?.thicken ?? THICKEN)
   context.strokeText(character, pad * SUBSAMPLE, ascent * SUBSAMPLE)
 
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
@@ -935,11 +938,12 @@ function ornamentCells(geometry) {
 
 const CAPTION = 'type anything you want'
 const CAPTION_EM = 12
-// A rounder, sturdier italic than the writing's, so the small letters
-// stay graceful when charted to so few cells.
+// The writing's high-contrast italic breaks up at this small size, so the
+// caption uses a rounder italic that still reads when charted to so few
+// cells.
 export const CAPTION_FONT = 'Lora, Georgia, serif'
 export const CAPTION_FONT_STYLE = 'italic 400'
-const CAPTION_FACE = { style: CAPTION_FONT_STYLE, family: CAPTION_FONT }
+const CAPTION_FACE = { style: CAPTION_FONT_STYLE, family: CAPTION_FONT, thicken: 0.35 }
 
 // Picot loops all around the outside of the border: the scalloped edge
 // that finishes a piece of lace.

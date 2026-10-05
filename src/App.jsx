@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ProjectHeader } from '@helenhsong/ui'
 import '@helenhsong/ui/style.css'
-import '@fontsource/cormorant-garamond/latin-600-italic.css'
+import '@fontsource/playfair-display/latin-400-italic.css'
 import '@fontsource/lora/latin-400-italic.css'
 import readme from '../README.md?raw'
 import {
