@@ -15,6 +15,7 @@ import {
   caretPosition,
   createGeometry,
   layoutText,
+  stitchDuration,
 } from './embroidery.js'
 
 function useReducedMotion() {
@@ -112,6 +113,8 @@ function App() {
   const rendererRef = useRef(null)
   const inputRef = useRef(null)
   const birthsRef = useRef([])
+  const ghostsRef = useRef([])
+  const previousLayoutRef = useRef(null)
   const previousTextRef = useRef('')
   const sceneRef = useRef(null)
   const fontReady = useFontReady()
@@ -175,6 +178,27 @@ function App() {
     const births = oldBirths.slice(0, prefix)
     const added = next.length - prefix - suffix
     const now = performance.now()
+
+    // Deleted letters are unpicked where they stood, the last one typed
+    // coming out first.
+    const removed = previous.length - prefix - suffix
+    const oldLayout = previousLayoutRef.current
+    const ghosts = ghostsRef.current.filter((ghost) => now < ghost.end)
+    if (removed > 0 && oldLayout && !reducedMotion) {
+      const gap = removed > 6 ? Math.min(40, 700 / removed) : 110
+      let order = 0
+      for (let index = prefix + removed - 1; index >= prefix; index -= 1) {
+        const item = oldLayout.characters[index]
+        const birth = oldBirths[index]
+        if (!item?.glyph || (birth !== undefined && birth > now)) continue
+        const start = now + order * gap
+        const duration = stitchDuration(item.glyph) * 0.85
+        ghosts.push({ item, start, duration, end: start + duration + 120 })
+        order += 1
+      }
+    }
+    ghostsRef.current = ghosts
+    previousLayoutRef.current = layout
     const bulk = added > 6
     const spacing = bulk ? Math.min(60, 1100 / added) : 150
     let lastBirth = oldBirths.reduce(
@@ -231,6 +255,7 @@ function App() {
       const renderer = rendererRef.current
       if (scene && renderer) {
         scene.births = birthsRef.current
+        scene.ghosts = ghostsRef.current
         // Read the scroll position every frame so the lace moves with the
         // page smoothly instead of in steps.
         scene.scrollY = window.scrollY

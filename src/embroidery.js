@@ -1383,6 +1383,24 @@ export class LaceRenderer {
       })
     }
 
+    // Deleted letters come undone in the reverse of how they were worked:
+    // the last stitch is pulled out first, each block's posts sinking back
+    // into the mesh as the thread is drawn through.
+    for (const ghost of scene.ghosts ?? []) {
+      if (now >= ghost.end) continue
+      const { item, start, duration } = ghost
+      const { cells } = item.glyph
+      const baseRow = geometry.baselineOffset + item.line * geometry.lineHeight
+      cells.forEach(([dx, dy], cellIndex) => {
+        const order = cells.length - 1 - cellIndex
+        const cellStart = start + (order / cells.length) * duration
+        const progress = 1 - clamp((now - cellStart) / (CELL_FILL_MS * 0.7), 0, 1)
+        if (progress <= 0) return
+        const { gx, gy } = this.toGrid(item.col + dx, baseRow + dy)
+        if (gy >= firstRow && gy <= lastRow) this.drawBlock(context, gx, gy, progress)
+      })
+    }
+
     // The thread comes out of the cell being worked, or rests at the
     // insertion point.
     let target
