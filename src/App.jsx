@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { ProjectHeader } from '@helenhsong/ui'
 import '@helenhsong/ui/style.css'
 import '@fontsource/playfair-display/latin-400-italic.css'
@@ -116,6 +123,10 @@ function App() {
   const ghostsRef = useRef([])
   const previousLayoutRef = useRef(null)
   const previousTextRef = useRef('')
+  const ghostTimerRef = useRef(0)
+  // Rows the piece must keep while deleted letters are still unravelling,
+  // so the border only draws in as the stitches come out.
+  const [ghostRows, setGhostRows] = useState(0)
   const sceneRef = useRef(null)
   const fontReady = useFontReady()
   const reducedMotion = useReducedMotion()
@@ -133,7 +144,9 @@ function App() {
   )
   // The piece is sized to its writing: it starts one line tall and grows
   // a row at a time as the writing gets longer.
-  const growRows = layout ? layout.height - geometry.visibleTextRows : 0
+  const growRows = layout
+    ? Math.max(layout.height, ghostRows) - geometry.visibleTextRows
+    : 0
   const overflowRows = Math.max(0, growRows)
   const maxScroll = overflowRows * geometry.cell
   const documentHeight = viewport.height + overflowRows * geometry.cell
@@ -149,6 +162,31 @@ function App() {
     () => (layout ? caretPosition(layout, caret) : { col: 0, line: 0 }),
     [caret, layout],
   )
+
+  // Keep the piece tall enough for every letter still being unpicked, and
+  // let it draw in as each one finishes.
+  const holdForGhosts = useCallback(function hold() {
+    window.clearTimeout(ghostTimerRef.current)
+    const now = performance.now()
+    let rows = 0
+    let nextEnd = Infinity
+    for (const ghost of ghostsRef.current) {
+      if (now >= ghost.end) continue
+      rows = Math.max(
+        rows,
+        geometry.baselineOffset +
+          ghost.item.line * geometry.lineHeight +
+          Math.round(geometry.em * 0.5),
+      )
+      nextEnd = Math.min(nextEnd, ghost.end)
+    }
+    setGhostRows(rows)
+    if (nextEnd < Infinity) {
+      ghostTimerRef.current = window.setTimeout(hold, nextEnd - now)
+    }
+  }, [geometry])
+
+  useEffect(() => () => window.clearTimeout(ghostTimerRef.current), [])
 
   // Schedule newly typed characters to be stitched one after another. Only
   // the changed span is new: text before and after an insertion keeps its
@@ -199,6 +237,7 @@ function App() {
     }
     ghostsRef.current = ghosts
     previousLayoutRef.current = layout
+    holdForGhosts()
     const bulk = added > 6
     const spacing = bulk ? Math.min(60, 1100 / added) : 150
     let lastBirth = oldBirths.reduce(
@@ -223,7 +262,7 @@ function App() {
 
     birthsRef.current = births
     previousTextRef.current = text
-  }, [layout, reducedMotion, text])
+  }, [holdForGhosts, layout, reducedMotion, text])
 
   useLayoutEffect(() => {
     sceneRef.current = layout
