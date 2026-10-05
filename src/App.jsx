@@ -37,10 +37,20 @@ function useViewport() {
   }))
 
   useEffect(() => {
-    const update = () =>
-      setSize({ width: window.innerWidth, height: window.innerHeight })
+    // Repainting the whole mesh is costly, so wait for resizing to settle.
+    let timer = 0
+    const update = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(
+        () => setSize({ width: window.innerWidth, height: window.innerHeight }),
+        150,
+      )
+    }
     window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('resize', update)
+    }
   }, [])
 
   return size
