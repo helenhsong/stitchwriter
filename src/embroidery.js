@@ -382,6 +382,18 @@ function paintMesh(context, geometry) {
   // Open mesh is a little greyer than the solid blocks, as in real
   // filet lace, so the worked design stands out.
   const tones = ['#d8d8d5', '#e2e2df', '#cfcfcc']
+
+  // A faint halo of loose fibre around every thread, as cotton lace has.
+  const halo = new Path2D()
+  for (const [a, b] of buckets.flat()) {
+    halo.moveTo(a.x, a.y)
+    halo.lineTo(b.x, b.y)
+  }
+  context.strokeStyle = 'rgba(255, 255, 255, 0.06)'
+  context.lineWidth = lineWidth * 3.2
+  context.lineCap = 'round'
+  context.stroke(halo)
+
   buckets.forEach((segments, index) =>
     strokeStrand(context, segments, lineWidth, tones[index]),
   )
@@ -391,12 +403,12 @@ function paintMesh(context, geometry) {
   const knotPath = new Path2D()
   const knotHighlight = new Path2D()
   for (const point of knots) {
-    knotPath.moveTo(point.x + lineWidth * 0.5, point.y)
-    knotPath.arc(point.x, point.y, lineWidth * 0.5, 0, Math.PI * 2)
+    knotPath.moveTo(point.x + lineWidth * 0.95, point.y)
+    knotPath.arc(point.x, point.y, lineWidth * 0.95, 0, Math.PI * 2)
     knotHighlight.moveTo(point.x - lineWidth * 0.02, point.y - lineWidth * 0.2)
     knotHighlight.arc(point.x - lineWidth * 0.2, point.y - lineWidth * 0.2, lineWidth * 0.18, 0, Math.PI * 2)
   }
-  context.fillStyle = THREAD_SHADE
+  context.fillStyle = '#d6d6d3'
   context.fill(knotPath)
   context.fillStyle = 'rgba(255, 255, 255, 0.5)'
   context.fill(knotHighlight)
@@ -450,6 +462,10 @@ function makeBlockSprites(geometry, ratio) {
       shade.addColorStop(1, '#dddcd8')
       context.fillStyle = shade
       context.fillRect(x + 0.25, 0, post - 0.5, size)
+      if (k > 0) {
+        context.fillStyle = 'rgba(40, 40, 38, 0.22)'
+        context.fillRect(x - 0.2, lineWidth * 0.8, 0.45, size - lineWidth * 0.8)
+      }
 
       context.strokeStyle = TWIST
       context.lineWidth = Math.max(0.5, post * 0.16)
@@ -544,6 +560,56 @@ function frameCells(geometry) {
   diamond(middle, bottom - 1)
 
   return cells
+}
+
+// Picot loops along the outside of the border: the scalloped edge that
+// finishes a piece of lace.
+function paintPicots(context, geometry) {
+  const { frame, cell, lineWidth } = geometry
+  const radius = cell * 0.95
+  const path = new Path2D()
+  const left = frame.left * cell
+  const right = (frame.right + 1) * cell + lineWidth
+  const top = frame.top * cell
+  const bottom = (frame.bottom + 1) * cell + lineWidth
+  const loop = (x, y, angle) => {
+    path.moveTo(x + Math.cos(angle - Math.PI / 2) * radius, y + Math.sin(angle - Math.PI / 2) * radius)
+    path.arc(x, y, radius, angle - Math.PI / 2, angle + Math.PI / 2)
+  }
+  for (let x = left + cell * 4; x <= right - cell * 4; x += cell * 2) {
+    loop(x, top, -Math.PI / 2)
+    loop(x, bottom, Math.PI / 2)
+  }
+  for (let y = top + cell * 4; y <= bottom - cell * 4; y += cell * 2) {
+    loop(left, y, Math.PI)
+    loop(right, y, 0)
+  }
+
+  context.save()
+  context.lineCap = 'round'
+  context.strokeStyle = THREAD_SHADE
+  context.lineWidth = lineWidth * 1.5
+  context.stroke(path)
+  context.strokeStyle = THREAD
+  context.lineWidth = lineWidth * 1.0
+  context.stroke(path)
+  context.restore()
+}
+
+// Soften a finished layer slightly: lace thread is fuzzy, never crisp.
+function soften(layer, amount) {
+  const { canvas, context } = layer
+  if (!('filter' in context)) return
+  const copy = document.createElement('canvas')
+  copy.width = canvas.width
+  copy.height = canvas.height
+  copy.getContext('2d').drawImage(canvas, 0, 0)
+  context.save()
+  context.setTransform(1, 0, 0, 1, 0, 0)
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.filter = `blur(${amount}px)`
+  context.drawImage(copy, 0, 0)
+  context.restore()
 }
 
 function labelHoles(geometry) {
@@ -762,6 +828,8 @@ export class LaceRenderer {
     }
 
     for (const [x, y] of frameCells(geometry)) this.drawBlock(context, x, y)
+    paintPicots(context, geometry)
+    soften(this.meshLayer, this.ratio * 0.45)
   }
 
   // Map a text-area cell to viewport grid coordinates, or null if the
@@ -812,6 +880,7 @@ export class LaceRenderer {
         }
       }
     }
+    if (!placeholder) soften(this.textLayer, this.ratio * 0.35)
   }
 
   cellCenter(gx, gy) {
