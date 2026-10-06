@@ -47,26 +47,40 @@ body {
   resize: none;
 }
 
-/* Over the lace, the header link and the Unstitch all button are fabric
-   buttons drawn on the canvas with their labels stitched in; their own
-   text stays in place, invisible, so it is still what gets clicked,
-   focused and read aloud. */
-.ph-project-header a,
-.lace-unstitch {
-  color: transparent;
+/* The header link and Unstitch all are plain pixel lettering, lowered on
+   wide screens to sit level with the seal's words. */
+.ph-project-header {
+  padding-top: calc(var(--seal-middle, 34px) - 10px);
 }
 
-/* Where the header's right-hand link used to sit, in the same type. */
+.ph-project-header a,
+.lace-unstitch {
+  color: var(--project-fg);
+  font: 14px / 20px 'Geist Pixel', ui-monospace, monospace;
+  /* A dark halo parts the lace behind the letters so they stay legible. */
+  text-shadow:
+    0 0 2px var(--project-bg),
+    0 0 4px var(--project-bg),
+    0 0 8px var(--project-bg);
+}
+
+.ph-project-header a:hover,
+.lace-unstitch:hover {
+  color: var(--project-hover-fg);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Where the header's right-hand link used to sit. */
 .lace-unstitch {
   position: fixed;
   z-index: 11;
-  top: 24px;
+  top: calc(var(--seal-middle, 34px) - 10px);
   right: 32px;
   padding: 0;
   border: 0;
   background: none;
   cursor: pointer;
-  font: 12px / 150% 'iAWriterMonoV-Regular', 'iA Writer Mono V', system-ui, sans-serif;
 }
 
 @media (max-width: 420px) {

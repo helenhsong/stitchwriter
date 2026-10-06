@@ -66,7 +66,14 @@ export function createGeometry(viewportWidth, viewportHeight) {
   return {
     cell,
     em,
-    seal: { centre, top: sealTop, bottom: sealBottom },
+    seal: {
+      centre,
+      top: sealTop,
+      bottom: sealBottom,
+      // Where the header buttons line up with the seal's lettering, on
+      // screens wide enough to share a row with it.
+      middle: compact ? null : (sealTop + 11) * cell,
+    },
     cols,
     rows,
     frame,
@@ -607,41 +614,6 @@ function soften(layer, amount) {
   context.restore()
 }
 
-// The header buttons' lettering, embroidered finely in black thread.
-const BUTTON_FONT = '700 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
-
-// A slim fabric button for each header link, worked into the lace and
-// centred on the link.
-function labelButtons(geometry) {
-  const { cell, cols } = geometry
-  const measure = getMeasureContext(10)
-  measure.font = BUTTON_FONT
-  return Array.from(document.querySelectorAll('.ph-project-header a, .lace-unstitch')).map(
-    (link) => {
-      link.style.padding = ''
-      link.style.margin = ''
-      const bounds = link.getBoundingClientRect()
-      const label = link.textContent.trim()
-      const textWidth = measure.measureText(label).width
-      const width = Math.ceil((textWidth + 18) / cell)
-      const height = Math.ceil(22 / cell)
-      const centreX = Math.round((bounds.left + bounds.right) / 2 / cell)
-      const centreY = Math.round((bounds.top + bounds.bottom) / 2 / cell)
-      // Kept clear of the edges of the screen.
-      const left = clamp(centreX - Math.floor(width / 2), 2, cols - width - 3)
-      const top = centreY - Math.floor(height / 2)
-      // Grow the link to cover its button, without moving anything around
-      // it, so the whole button can be clicked.
-      const padLeft = Math.max(0, bounds.left - left * cell)
-      const padRight = Math.max(0, (left + width) * cell - bounds.right)
-      const padY = Math.max(0, (height * cell - bounds.height) / 2)
-      link.style.padding = `${padY}px ${padRight}px ${padY}px ${padLeft}px`
-      link.style.margin = `${-padY}px ${-padRight}px ${-padY}px ${-padLeft}px`
-      return { label, left, top, right: left + width - 1, bottom: top + height - 1 }
-    },
-  )
-}
-
 // Sample a cubic Bézier into points.
 function bezierPoints(p0, p1, p2, p3, count) {
   const points = []
@@ -868,7 +840,6 @@ export class LaceRenderer {
     this.layerRows = geometry.rows + this.band + 2
     this.velvetLayer = makeCanvas(width, height, ratio)
     this.meshLayer = makeCanvas(width, height + (MESH_PERIOD + 1) * geometry.cell, ratio)
-    this.holesLayer = makeCanvas(width, height, ratio)
     this.textLayer = makeCanvas(width, this.layerRows * geometry.cell, ratio)
     this.bandStart = 0
     this.ornamentKey = ''
@@ -909,9 +880,8 @@ export class LaceRenderer {
     }
   }
 
-  // The fixed layers: the velvet ground stays put behind the lace, the open
-  // mesh is one repeating strip that slides as the page scrolls, and the
-  // header links sit on fabric buttons above everything else.
+  // The fixed layers: the velvet ground stays put behind the lace, and the
+  // open mesh is one repeating strip that slides as the page scrolls.
   paintBase() {
     const { geometry } = this
     paintVelvet(this.velvetLayer.context, this.width, this.height)
@@ -920,76 +890,7 @@ export class LaceRenderer {
       rows: geometry.rows + MESH_PERIOD + 1,
     })
     soften(this.meshLayer, this.ratio * 0.3)
-
-    // A slim white button worked solid into the lace under each header
-    // link, its label embroidered over it in black satin stitch.
-    const { context } = this.holesLayer
-    const buttons = labelButtons(geometry)
-    for (const { left, top, right, bottom } of buttons) {
-      for (let y = top; y <= bottom; y += 1) {
-        for (let x = left; x <= right; x += 1) {
-          // Round off the corners.
-          if (Math.min(x - left, right - x) + Math.min(y - top, bottom - y) === 0) continue
-          this.drawBlock(context, x, y)
-        }
-      }
-    }
-    soften(this.holesLayer, this.ratio * 0.45)
-    for (const button of buttons) this.embroiderLabel(context, button)
   }
-
-  // Embroider a button's label in black thread: the lettering is laid
-  // out on a fine stitch grid and each covered point gets a short slanted
-  // satin stitch with a glint of light along it, so the letters read as
-  // worked in thread rather than printed.
-  embroiderLabel(context, { label, left, top, right, bottom }) {
-    const { cell, lineWidth } = this.geometry
-    const x = ((left + right + 1) / 2) * cell + lineWidth / 2
-    const y = ((top + bottom + 1) / 2) * cell + lineWidth / 2
-    const scale = 4
-    const box = { left: left * cell, top: top * cell, width: (right - left + 1) * cell, height: (bottom - top + 1) * cell }
-    const guide = document.createElement('canvas')
-    guide.width = Math.ceil(box.width * scale)
-    guide.height = Math.ceil(box.height * scale)
-    const ink = guide.getContext('2d', { willReadFrequently: true })
-    ink.scale(scale, scale)
-    ink.font = BUTTON_FONT
-    ink.textAlign = 'center'
-    ink.textBaseline = 'middle'
-    ink.fillStyle = '#000'
-    ink.fillText(label, x - box.left, y - box.top + 0.5)
-    const pixels = ink.getImageData(0, 0, guide.width, guide.height).data
-    const covered = (px, py) => {
-      const gx = Math.round((px - box.left) * scale)
-      const gy = Math.round((py - box.top) * scale)
-      if (gx < 0 || gy < 0 || gx >= guide.width || gy >= guide.height) return false
-      return pixels[(gy * guide.width + gx) * 4 + 3] > 110
-    }
-
-    const pitch = 1.15
-    const stitches = new Path2D()
-    const glints = new Path2D()
-    for (let py = box.top; py < box.top + box.height; py += pitch) {
-      for (let px = box.left; px < box.left + box.width; px += pitch) {
-        if (!covered(px, py)) continue
-        const jitter = (hash(px, py) - 0.5) * 0.25
-        stitches.moveTo(px - pitch * 0.55, py + pitch * 0.45 + jitter)
-        stitches.lineTo(px + pitch * 0.55, py - pitch * 0.45 + jitter)
-        glints.moveTo(px - pitch * 0.3, py + pitch * 0.05 + jitter)
-        glints.lineTo(px + pitch * 0.25, py - pitch * 0.4 + jitter)
-      }
-    }
-    context.save()
-    context.lineCap = 'round'
-    context.strokeStyle = '#121211'
-    context.lineWidth = pitch * 0.95
-    context.stroke(stitches)
-    context.strokeStyle = 'rgba(150, 150, 146, 0.35)'
-    context.lineWidth = pitch * 0.3
-    context.stroke(glints)
-    context.restore()
-  }
-
 
   // Map a text cell to document grid coordinates.
   toGrid(col, row) {
@@ -1218,15 +1119,6 @@ export class LaceRenderer {
       swing: idleSway + this.anchor.velocity,
       lift: this.lift,
     })
-    this.drawHoles()
-  }
-
-  // The header links' holes sit above everything, thread included.
-  drawHoles() {
-    const { context, ratio } = this
-    context.setTransform(1, 0, 0, 1, 0, 0)
-    context.drawImage(this.holesLayer.canvas, 0, 0)
-    context.setTransform(ratio, 0, 0, ratio, 0, 0)
   }
 }
 

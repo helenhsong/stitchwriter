@@ -9,6 +9,7 @@ import {
 import { ProjectHeader } from '@helenhsong/ui'
 import '@helenhsong/ui/style.css'
 import '@fontsource/playfair-display/latin-400-italic.css'
+import '@fontsource/geist-pixel/latin-400.css'
 import {
   HEADER_HEIGHT,
   LaceRenderer,
@@ -111,6 +112,13 @@ function App() {
     () => createGeometry(viewport.width, viewport.height),
     [viewport.width, viewport.height],
   )
+  // Line the header buttons up with the seal where they share a row.
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    const { middle } = geometry.seal
+    if (middle === null) root.style.removeProperty('--seal-middle')
+    else root.style.setProperty('--seal-middle', `${middle}px`)
+  }, [geometry])
   const placeholder = !text
   const layout = useMemo(
     () => (fontReady ? layoutText(text, geometry) : null),
