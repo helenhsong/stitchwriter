@@ -47,18 +47,28 @@ body {
   resize: none;
 }
 
-/* The header link and Unstitch all are stitched into the lace on the
-   canvas; their own text stays in place, invisible, so it is still what
-   gets clicked, focused and read aloud. On wide screens they are lowered
-   to sit level with the seal's words. */
+/* The header link and Unstitch all are plain pixel lettering, lowered on
+   wide screens to sit level with the seal's words. */
 .ph-project-header {
   padding-top: calc(var(--seal-middle, 34px) - 10px);
 }
 
 .ph-project-header a,
 .lace-unstitch {
-  color: transparent;
+  color: var(--project-fg);
   font: 14px / 20px 'Geist Pixel', ui-monospace, monospace;
+  /* A dark halo parts the lace behind the letters so they stay legible. */
+  text-shadow:
+    0 0 2px var(--project-bg),
+    0 0 4px var(--project-bg),
+    0 0 8px var(--project-bg);
+}
+
+.ph-project-header a:hover,
+.lace-unstitch:hover {
+  color: var(--project-hover-fg);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 /* Where the header's right-hand link used to sit. */

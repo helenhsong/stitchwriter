@@ -8,12 +8,11 @@ import {
 } from 'react'
 import { ProjectHeader } from '@helenhsong/ui'
 import '@helenhsong/ui/style.css'
-import '@fontsource/libre-baskerville/latin-400.css'
+import '@fontsource/playfair-display/latin-400-italic.css'
 import '@fontsource/geist-pixel/latin-400.css'
 import {
   HEADER_HEIGHT,
   LaceRenderer,
-  LABEL_FONT,
   STITCH_FONT,
   STITCH_FONT_STYLE,
   caretIndexAt,
@@ -70,10 +69,7 @@ function useFontReady() {
     let active = true
     const timeout = new Promise((resolve) => window.setTimeout(resolve, 1800))
     const fontLoad = document.fonts
-      ? Promise.all([
-          document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`),
-          document.fonts.load(`88px ${LABEL_FONT}`),
-        ])
+      ? document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`)
       : Promise.resolve()
 
     Promise.race([fontLoad, timeout]).then(() => {
