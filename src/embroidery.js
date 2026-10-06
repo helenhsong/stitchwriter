@@ -623,10 +623,10 @@ const LABEL_EM = 13
 
 // Stitch each header link's label into the lace where the link sits, and
 // grow the (invisible) link to cover its stitches so the whole label can
-// be clicked. The labels are worked finer than the mesh, at about 1.5px a
-// stitch, as delicate embroidery.
+// be clicked. The labels are worked at half the mesh's scale, as fine
+// embroidery.
 function labelCells(geometry, width) {
-  const cell = geometry.cell / Math.max(1, Math.round(geometry.cell / 1.5))
+  const cell = geometry.cell / 2
   const cells = []
   for (const link of document.querySelectorAll('.ph-project-header a, .lace-unstitch')) {
     link.style.padding = ''
