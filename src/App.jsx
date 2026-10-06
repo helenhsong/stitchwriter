@@ -1,14 +1,19 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { ProjectHeader } from '@helenhsong/ui'
 import '@helenhsong/ui/style.css'
 import '@fontsource/playfair-display/latin-400-italic.css'
-import '@fontsource/lora/latin-400-italic.css'
-import readme from '../README.md?raw'
+import '@fontsource/geist-pixel/latin-400.css'
 import {
-  CAPTION_FONT,
-  CAPTION_FONT_STYLE,
   HEADER_HEIGHT,
   LaceRenderer,
+  LABEL_FONT,
   STITCH_FONT,
   STITCH_FONT_STYLE,
   caretIndexAt,
@@ -67,7 +72,7 @@ function useFontReady() {
     const fontLoad = document.fonts
       ? Promise.all([
           document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`),
-          document.fonts.load(`${CAPTION_FONT_STYLE} 72px ${CAPTION_FONT}`),
+          document.fonts.load(`88px ${LABEL_FONT}`),
         ])
       : Promise.resolve()
 
@@ -81,24 +86,6 @@ function useFontReady() {
   }, [])
 
   return ready
-}
-
-// ProjectHeader marks <html data-ph-open> while its README panel is showing.
-function useReadmeOpen() {
-  const [open, setOpen] = useState(() =>
-    document.documentElement.hasAttribute('data-ph-open'),
-  )
-
-  useEffect(() => {
-    const root = document.documentElement
-    const update = () => setOpen(root.hasAttribute('data-ph-open'))
-    const observer = new MutationObserver(update)
-    observer.observe(root, { attributes: true, attributeFilter: ['data-ph-open'] })
-    update()
-    return () => observer.disconnect()
-  }, [])
-
-  return open
 }
 
 function codePointLength(value) {
@@ -116,16 +103,26 @@ function App() {
   const ghostsRef = useRef([])
   const previousLayoutRef = useRef(null)
   const previousTextRef = useRef('')
+  const ghostTimerRef = useRef(0)
+  // Rows the piece must keep while deleted letters are still unravelling,
+  // so the border only draws in as the stitches come out.
+  const [ghostRows, setGhostRows] = useState(0)
   const sceneRef = useRef(null)
   const fontReady = useFontReady()
   const reducedMotion = useReducedMotion()
   const viewport = useViewport()
-  const readmeOpen = useReadmeOpen()
 
   const geometry = useMemo(
     () => createGeometry(viewport.width, viewport.height),
     [viewport.width, viewport.height],
   )
+  // Line the header buttons up with the seal where they share a row.
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    const { middle } = geometry.seal
+    if (middle === null) root.style.removeProperty('--seal-middle')
+    else root.style.setProperty('--seal-middle', `${middle}px`)
+  }, [geometry])
   const placeholder = !text
   const layout = useMemo(
     () => (fontReady ? layoutText(text, geometry) : null),
@@ -133,7 +130,9 @@ function App() {
   )
   // The piece is sized to its writing: it starts one line tall and grows
   // a row at a time as the writing gets longer.
-  const growRows = layout ? layout.height - geometry.visibleTextRows : 0
+  const growRows = layout
+    ? Math.max(layout.height, ghostRows) - geometry.visibleTextRows
+    : 0
   const overflowRows = Math.max(0, growRows)
   const maxScroll = overflowRows * geometry.cell
   const documentHeight = viewport.height + overflowRows * geometry.cell
@@ -149,6 +148,31 @@ function App() {
     () => (layout ? caretPosition(layout, caret) : { col: 0, line: 0 }),
     [caret, layout],
   )
+
+  // Keep the piece tall enough for every letter still being unpicked, and
+  // let it draw in as each one finishes.
+  const holdForGhosts = useCallback(function hold() {
+    window.clearTimeout(ghostTimerRef.current)
+    const now = performance.now()
+    let rows = 0
+    let nextEnd = Infinity
+    for (const ghost of ghostsRef.current) {
+      if (now >= ghost.end) continue
+      rows = Math.max(
+        rows,
+        geometry.baselineOffset +
+          ghost.item.line * geometry.lineHeight +
+          Math.round(geometry.em * 0.5),
+      )
+      nextEnd = Math.min(nextEnd, ghost.end)
+    }
+    setGhostRows(rows)
+    if (nextEnd < Infinity) {
+      ghostTimerRef.current = window.setTimeout(hold, nextEnd - now)
+    }
+  }, [geometry])
+
+  useEffect(() => () => window.clearTimeout(ghostTimerRef.current), [])
 
   // Schedule newly typed characters to be stitched one after another. Only
   // the changed span is new: text before and after an insertion keeps its
@@ -199,6 +223,7 @@ function App() {
     }
     ghostsRef.current = ghosts
     previousLayoutRef.current = layout
+    holdForGhosts()
     const bulk = added > 6
     const spacing = bulk ? Math.min(60, 1100 / added) : 150
     let lastBirth = oldBirths.reduce(
@@ -223,7 +248,7 @@ function App() {
 
     birthsRef.current = births
     previousTextRef.current = text
-  }, [layout, reducedMotion, text])
+  }, [holdForGhosts, layout, reducedMotion, text])
 
   useLayoutEffect(() => {
     sceneRef.current = layout
@@ -241,14 +266,14 @@ function App() {
   }, [caret, caretCell, layout, maxScroll, pieceGeometry, placeholder, reducedMotion])
 
   useEffect(() => {
-    if (!fontReady || readmeOpen || !canvasRef.current) return undefined
+    if (!fontReady || !canvasRef.current) return undefined
     const renderer = new LaceRenderer(canvasRef.current)
     renderer.resize(viewport.width, viewport.height, geometry)
     rendererRef.current = renderer
-  }, [fontReady, geometry, readmeOpen, viewport.height, viewport.width])
+  }, [fontReady, geometry, viewport.height, viewport.width])
 
   useEffect(() => {
-    if (!fontReady || readmeOpen) return undefined
+    if (!fontReady) return undefined
     let frame = 0
 
     const paint = (now) => {
@@ -277,12 +302,12 @@ function App() {
       cancelAnimationFrame(frame)
       window.removeEventListener('scroll', onScroll)
     }
-  }, [caret, fontReady, geometry, readmeOpen, reducedMotion, text])
+  }, [caret, fontReady, geometry, reducedMotion, text])
 
   // Ready to type as soon as the page opens, and any key typed while focus
   // is elsewhere on the page goes to the lace.
   useEffect(() => {
-    if (!fontReady || readmeOpen) return undefined
+    if (!fontReady) return undefined
     const input = inputRef.current
     input?.focus({ preventScroll: true })
 
@@ -296,7 +321,7 @@ function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [fontReady, readmeOpen])
+  }, [fontReady])
 
   // Keep the insertion point on screen as the piece grows. This only runs
   // when the writing or the insertion point changes, never on scroll, so
@@ -323,6 +348,14 @@ function App() {
       window.scrollTo({ top: Math.max(0, caretTop - headerRows - 1) * geometry.cell })
     }
   }, [caretCell.line, geometry, layout, placeholder])
+
+  // Pull every stitch out, last letter first, and start again.
+  const unstitchAll = () => {
+    const input = inputRef.current
+    setText('')
+    setCaret(0)
+    input?.focus({ preventScroll: true })
+  }
 
   const syncCaret = (input) => {
     const offset = input.selectionDirection === 'backward'
@@ -364,7 +397,15 @@ function App() {
 
   return (
     <>
-      <ProjectHeader readme={readme} />
+      <ProjectHeader />
+      <button
+        type="button"
+        className="lace-unstitch"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={unstitchAll}
+      >
+        Unstitch all
+      </button>
       <main
         ref={mainRef}
         className="lace-page"
@@ -386,11 +427,6 @@ function App() {
               : 'An empty piece of filet lace'
           }
         />
-        {!fontReady && (
-          <div className="lace-loader" role="status" aria-live="polite">
-            threading the needle…
-          </div>
-        )}
         <textarea
           ref={inputRef}
           className="lace-input"

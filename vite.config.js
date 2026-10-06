@@ -3,10 +3,5 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   base: '/stitchwriter/',
-  build: {
-    rollupOptions: {
-      input: ['index.html', 'readme/index.html'],
-    },
-  },
   plugins: [react()],
 })

@@ -39,51 +39,41 @@ function hash(x, y) {
 export function createGeometry(viewportWidth, viewportHeight) {
   const compact = viewportWidth < 560
   // A fine mesh, like thread-weight filet lace: more, smaller cells.
-  const cell = compact ? 2.5 : clamp(Math.round(viewportWidth / 480), 3, 4)
+  const cell = compact ? 3 : clamp(Math.round(viewportWidth / 480) + 1, 4, 5)
   // Letters are charted at one stitch per cell; em sizes everything else
   // (fallback punctuation, spacing, the caret) to match them.
   const em = 10
-  const motif = compact ? 7 : 9
-  const arch = compact ? 5 : 7
-  const notch = compact ? 6 : 8
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
   const headerRows = Math.ceil(HEADER_HEIGHT / cell)
-  // A small, dainty doily centred on a wide expanse of open lace.
+  // The seal: an embroidered title with fairy dust at the top
+  // of the page, between the header buttons on wide screens.
+  const centre = Math.floor(Math.floor(viewportWidth / cell) / 2)
+  const sealTop = compact ? headerRows + 2 : 6
+  const sealBottom = sealTop + 28
+  // Below the seal, open lace for the writing.
   const across = compact
-    ? Math.floor(viewportWidth / cell) - 40
-    : Math.round(Math.min(viewportWidth * 0.5, 720) / cell)
-  const side = Math.floor((Math.floor(viewportWidth / cell) - across) / 2)
-  const frame = {
-    left: side,
-    right: side + across - 1,
-    top: headerRows + Math.round(rows * (compact ? 0.06 : 0.12)),
-    bottom: Math.floor(viewportHeight / cell) - 1 - Math.round(rows * (compact ? 0.1 : 0.14)),
-  }
-  // The border, by inset from the outline: a solid edge, a floral band of
-  // vines, flowers and leaves, then a solid inner line.
-  const band = compact
-    ? { start: 2, end: 12, line: 14 }
-    : { start: 2, end: 12, line: 14 }
-  // The writing sits in the straight-sided middle of the piece, inside the
-  // border and clear of the arches.
-  const clear = band.line + 3
+    ? Math.floor(viewportWidth / cell) - 16
+    : Math.round(Math.min(viewportWidth * 0.56, 760) / cell)
   const inner = {
-    left: frame.left + clear,
-    right: frame.right - clear,
-    top: frame.top + arch + clear,
-    bottom: frame.bottom - arch - clear,
+    left: centre - Math.floor(across / 2),
+    right: centre - Math.floor(across / 2) + across - 1,
+    top: sealBottom + (compact ? 16 : 20),
+    bottom: Math.floor(viewportHeight / cell) - 1 - (compact ? 10 : 16),
   }
-  const padX = compact ? 4 : 6
-  const padY = compact ? 3 : 4
-
+  // The writing area doubles as the piece's extent, which grows with it.
+  const frame = { ...inner }
   return {
     cell,
     em,
-    motif,
-    arch,
-    notch,
-    band,
+    seal: {
+      centre,
+      top: sealTop,
+      bottom: sealBottom,
+      // Where the header buttons line up with the seal's lettering, on
+      // screens wide enough to share a row with it.
+      middle: compact ? null : (sealTop + 11) * cell,
+    },
     cols,
     rows,
     frame,
@@ -91,10 +81,10 @@ export function createGeometry(viewportWidth, viewportHeight) {
     lineWidth: Math.max(0.8, cell * 0.22),
     lineHeight: Math.round(em * 1.4),
     baselineOffset: em,
-    textLeft: inner.left + padX,
-    textCols: Math.max(10, inner.right - inner.left + 1 - padX * 2),
-    textTop: inner.top + padY,
-    visibleTextRows: Math.max(1, inner.bottom - inner.top + 1 - padY * 2),
+    textLeft: inner.left,
+    textCols: Math.max(10, inner.right - inner.left + 1),
+    textTop: inner.top,
+    visibleTextRows: Math.max(1, inner.bottom - inner.top + 1),
   }
 }
 
@@ -543,105 +533,7 @@ function makeBlockSprites(geometry, ratio) {
   return sprites
 }
 
-// The piece's outline, a cartouche: arched top and bottom edges, straight
-// sides, and concave notches cut out of each corner.
-function archOffset(geometry, x) {
-  const { frame, arch } = geometry
-  const middle = (frame.left + frame.right) / 2
-  const half = (frame.right - frame.left) * 0.24
-  const t = (x - middle) / half
-  if (Math.abs(t) >= 1) return arch
-  return arch * (1 - (Math.cos(Math.PI * t) + 1) / 2)
-}
-
-function outlineCorners(geometry) {
-  const { frame, arch } = geometry
-  return [
-    [frame.left, frame.top + arch],
-    [frame.right, frame.top + arch],
-    [frame.left, frame.bottom - arch],
-    [frame.right, frame.bottom - arch],
-  ]
-}
-
-function insideOutline(geometry, x, y, inset) {
-  const { frame, notch } = geometry
-  if (x < frame.left + inset || x > frame.right - inset) return false
-  const rise = archOffset(geometry, x)
-  if (y < frame.top + rise + inset || y > frame.bottom - rise - inset) return false
-  for (const [cx, cy] of outlineCorners(geometry)) {
-    if (Math.hypot(x - cx, y - cy) < notch + inset) return false
-  }
-  return true
-}
-
-// Border cells in viewport-grid coordinates: a solid outer edge and inner
-// line following the cartouche outline, with a dotted line of single
-// blocks just inside the edge, as on a filet tablecloth.
-function frameCells(geometry) {
-  const { frame, band } = geometry
-  const cells = []
-  const ring = (x, y, from, to) =>
-    insideOutline(geometry, x, y, from) && !insideOutline(geometry, x, y, to + 1)
-  for (let y = frame.top; y <= frame.bottom; y += 1) {
-    for (let x = frame.left; x <= frame.right; x += 1) {
-      const edge = ring(x, y, 0, 0)
-      const line = ring(x, y, band.line, band.line)
-      const dots = ring(x, y, band.line + 2, band.line + 2) && (x + y) % 2 === 0
-      if (edge || line || dots) cells.push([x, y])
-    }
-  }
-  return cells
-}
-
-// Rasterize a small drawing (in cell units) to filet cells, the same way
-// glyphs are charted.
-function chart(width, height, draw) {
-  const canvas = document.createElement('canvas')
-  canvas.width = width * SUBSAMPLE
-  canvas.height = height * SUBSAMPLE
-  const context = canvas.getContext('2d', { willReadFrequently: true })
-  context.scale(SUBSAMPLE, SUBSAMPLE)
-  context.fillStyle = '#fff'
-  context.strokeStyle = '#fff'
-  context.lineCap = 'round'
-  context.lineJoin = 'round'
-  draw(context)
-  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
-  const cells = []
-  for (let cy = 0; cy < height; cy += 1) {
-    for (let cx = 0; cx < width; cx += 1) {
-      let covered = 0
-      for (let sy = 0; sy < SUBSAMPLE; sy += 1) {
-        const offset = ((cy * SUBSAMPLE + sy) * canvas.width + cx * SUBSAMPLE) * 4
-        for (let sx = 0; sx < SUBSAMPLE; sx += 1) {
-          covered += pixels[offset + sx * 4 + 3] / 255
-        }
-      }
-      if (covered / (SUBSAMPLE * SUBSAMPLE) >= 0.45) cells.push([cx, cy])
-    }
-  }
-  return cells
-}
-
-// A small rosette: a ring of petals around a solid centre.
-function rosette(size) {
-  return chart(size, size, (context) => {
-    const c = size / 2
-    context.beginPath()
-    context.arc(c, c, size * 0.14, 0, Math.PI * 2)
-    context.fill()
-    for (let k = 0; k < 8; k += 1) {
-      const angle = (k / 8) * Math.PI * 2
-      context.beginPath()
-      context.arc(c + Math.cos(angle) * size * 0.33, c + Math.sin(angle) * size * 0.33, size * 0.09, 0, Math.PI * 2)
-      context.fill()
-    }
-  })
-}
-
-// Hand-charted filet motifs, in the style of a filet pattern sheet: a
-// rose, a star flower, a heart and a ribbon bow. X is a filled block.
+// Hand-charted motifs, as on a cross-stitch sampler. X is a stitch.
 function parseChart(rows) {
   const width = Math.max(...rows.map((row) => row.length))
   const cells = rows.flatMap((row, y) =>
@@ -650,276 +542,60 @@ function parseChart(rows) {
   return { width, height: rows.length, cells }
 }
 
-// The corner spray: an eight-petalled flower where the sides meet, with an
-// arm running along each side, leaf pairs on a stem ending in a tulip cup.
-const CORNER_FLOWER = parseChart([
-  '..X...X..',
-  '.X.X.X.X.',
-  'X...X...X',
-  '.X.XXX.X.',
-  '..XX.XX..',
-  '.X.XXX.X.',
-  'X...X...X',
-  '.X.X.X.X.',
-  '..X...X..',
-])
+// Fairy dust: open diamonds of four stitches, little trios and lone
+// stitches.
+const DIAMOND = parseChart(['.X.', 'X.X', '.X.'])
+const TRIO = parseChart(['X.X', '.X.'])
 
-// One arm of the corner spray, from its tip (row 0) back to the flower.
-const CORNER_ARM = parseChart([
-  '.X...X.',
-  '.XX.XX.',
-  '.X.X.X.',
-  '..XXX..',
-  '...X...',
-  'X..X..X',
-  '.X.X.X.',
-  '..XXX..',
-  '...X...',
-  'X..X..X',
-  '.X.X.X.',
-  '..XXX..',
-  '...X...',
-  '...X...',
-])
-
-const STAR_FLOWER = parseChart([
-  '...X...',
-  '..XXX..',
-  '.X.X.X.',
-  'XXX.XXX',
-  '.X.X.X.',
-  '..XXX..',
-  '...X...',
-])
-
-const TINY_HEART = parseChart([
-  'XX.XX',
-  'XXXXX',
-  'XXXXX',
-  '.XXX.',
-  '..X..',
-])
-
-const BOW = parseChart([
-  '.XXXXX.............XXXXX.',
-  'XX...XXX.........XXX...XX',
-  'X..X...XX.......XX...X..X',
-  'X..XX...XX.....XX...XX..X',
-  'X...XX...XX...XX...XX...X',
-  'X....XX...XXXXX...XX....X',
-  'XX....XX..X...X..XX....XX',
-  '.XX....XXXX.X.XXXX....XX.',
-  '..XXX....XX...XX....XXX..',
-  '....XXXXXXXXXXXXXXXXX....',
-  '.........XXX.XXX.........',
-  '........XX.X.X.XX........',
-  '.......XX.XX.XX.XX.......',
-  '......XX.XX...XX.XX......',
-  '.....XX.XX.....XX.XX.....',
-  '....XXXXX.......XXXXX....',
-  '....X..X.........X..X....',
-])
-
-// One repeat of the border's running pattern, charted like a folk filet
-// border: a tulip on a stem with curling leaves, a small diamond between
-// tulips, a solid rule and a row of picots. Rows run from the outer edge
-// of the band (0) inward.
-const BORDER_REPEAT = parseChart([
-  '......X.......',
-  '.....X.X......',
-  '..X.X...X.X...',
-  '..XX.....XX..X',
-  '...X.X.X.X..X.',
-  '....X.X.X....X',
-  '......X.......',
-  '.X....X....X..',
-  '..XX..X..XX...',
-  'XXXXXXXXXXXXXX',
-  'X.X.X.X.X.X.X.',
-])
-
-// The motif band inside the border: the running tulip pattern along every
-// side, following the arches, with a rose at each corner. Everything is
-// clipped to the band.
-function bandCells(geometry) {
-  const { frame, band, arch } = geometry
-  const width = band.end - band.start + 1
-  const centre = band.start + (width - 1) / 2
+// The seal over the writing: "type anything" stitched in the charted
+// script, with fairy dust scattered round about.
+function sealCells(geometry) {
+  const { seal, em } = geometry
+  const { centre, top } = seal
   const seen = new Set()
   const cells = []
-  const add = (x, y) => {
-    const key = `${x},${y}`
+  const mark = (x, y) => {
+    const gx = Math.round(x)
+    const gy = Math.round(y)
+    const key = `${gx},${gy}`
     if (seen.has(key)) return
-    if (!insideOutline(geometry, x, y, band.start) || insideOutline(geometry, x, y, band.end + 1)) return
     seen.add(key)
-    cells.push([x, y])
+    cells.push([gx, gy])
   }
   const stamp = (chart, x, y) => {
-    const left = Math.round(x - (chart.width - 1) / 2)
-    const top = Math.round(y - (chart.height - 1) / 2)
-    for (const [dx, dy] of chart.cells) add(left + dx, top + dy)
+    for (const [dx, dy] of chart.cells) mark(x + dx, y + dy)
   }
-
-  // Each side, as a position along it (u) and a depth into the band from
-  // its outer edge (v). The pattern grows outward from the inner rule.
-  const offset = Math.max(0, Math.round((width - BORDER_REPEAT.height) / 2))
-  const armStart = Math.ceil(CORNER_FLOWER.width / 2)
-  const corner = Math.round(centre) + armStart + CORNER_ARM.height + 2
-  const sides = [
-    { from: frame.left + corner, to: frame.right - corner, at: (u, v) => [u, Math.round(frame.top + archOffset(geometry, u)) + band.start + v] },
-    { from: frame.left + corner, to: frame.right - corner, at: (u, v) => [u, Math.round(frame.bottom - archOffset(geometry, u)) - band.start - v] },
-    { from: frame.top + arch + corner, to: frame.bottom - arch - corner, at: (u, v) => [frame.left + band.start + v, u] },
-    { from: frame.top + arch + corner, to: frame.bottom - arch - corner, at: (u, v) => [frame.right - band.start - v, u] },
-  ]
-  const columns = Array.from({ length: BORDER_REPEAT.width }, () => [])
-  for (const [x, y] of BORDER_REPEAT.cells) columns[x].push(y)
-  const period = BORDER_REPEAT.width
-  for (const side of sides) {
-    // Centre a tulip on the middle of each side so the pattern is
-    // symmetric.
-    const middle = Math.round((side.from + side.to) / 2)
-    for (let u = side.from; u <= side.to; u += 1) {
-      const column = (((u - middle + 6) % period) + period) % period
-      for (const y of columns[column]) {
-        const [x, gy] = side.at(u, y + offset)
-        add(x, gy)
-      }
-    }
-  }
-
-  // A flower spray at each corner, its arms reaching along both sides.
-  for (const [cx, cy] of outlineCorners(geometry)) {
-    const sx = cx < (frame.left + frame.right) / 2 ? 1 : -1
-    const sy = cy < (frame.top + frame.bottom) / 2 ? 1 : -1
-    const fx = cx + sx * centre
-    const fy = cy + sy * centre
-    stamp(CORNER_FLOWER, fx, fy)
-    const half = (CORNER_ARM.width - 1) / 2
-    // While the piece is short, the arms up the sides would meet, so they
-    // wait until there is room for both.
-    const sideRoom = (frame.bottom - frame.top) / 2 - arch - centre
-    const reach = armStart + CORNER_ARM.height
-    const arms = sideRoom >= reach ? [[sx, 0], [0, sy]] : [[sx, 0]]
-    for (const [dx, dy] of arms) {
-      for (const [ax, ar] of CORNER_ARM.cells) {
-        const along = armStart + (CORNER_ARM.height - 1 - ar)
-        const across = ax - half
-        add(Math.round(fx + dx * along + dy * across), Math.round(fy + dy * along + dx * across))
-      }
-    }
-  }
-  return cells
-}
-
-// Ornament cells in viewport-grid coordinates.
-function ornamentCells(geometry) {
-  const { frame, arch } = geometry
-  const cells = []
-  const place = (shape, size, cx, cy) => {
-    const left = Math.round(cx - size / 2)
-    const top = Math.round(cy - size / 2)
-    for (const [x, y] of shape) cells.push([left + x, top + y])
-  }
-
-  // A motif sits in each corner notch, outside the border.
-  const [topLeft, topRight, bottomLeft, bottomRight] = outlineCorners(geometry)
-  const chartAt = (chart, cx, cy) => place(chart.cells, chart.width, cx, cy)
-  chartAt(STAR_FLOWER, topLeft[0] + 1, topLeft[1] - 1)
-  chartAt(STAR_FLOWER, topRight[0], topRight[1] - 1)
-  chartAt(STAR_FLOWER, bottomLeft[0] + 1, bottomLeft[1] + 1)
-  chartAt(STAR_FLOWER, bottomRight[0], bottomRight[1] + 1)
-
-  // Small motifs nested in the top and bottom arches, inside the border.
-  const middle = (frame.left + frame.right) / 2
-  const small = Math.max(5, arch - 2)
-  const below = geometry.band.line + 5
-  place(STAR_FLOWER.cells, STAR_FLOWER.width, middle, frame.top + below + STAR_FLOWER.height / 2)
-  place(rosette(small + 1), small + 1, middle, frame.bottom - below - (small + 1) / 2)
-
-  // A ribbon bow tied over the top arch.
-  const ribbon = BOW
-  const ribbonTop = frame.top - ribbon.height + 3
-  for (const [x, y] of ribbon.cells) {
-    cells.push([Math.round(middle - ribbon.width / 2) + x, ribbonTop + y])
-  }
-
-  // A small italic caption worked over the bow, its letters stepping up
-  // and down a gentle arc.
-  const glyphs = Array.from(CAPTION).map((character) =>
-    getGlyph(character, CAPTION_EM, CAPTION_FACE),
+  const glyphs = Array.from('type anything').map((character) =>
+    /\s/.test(character) ? null : getGlyph(character, em),
   )
-  const total = glyphs.reduce((sum, glyph) => sum + glyph.advance, 0)
-  const baseline = ribbonTop - 1
-  let x = middle - total / 2
+  const space = 4
+  const width = glyphs.reduce((sum, glyph) => sum + (glyph ? glyph.advance : space), 0)
+  const left = Math.round(centre - width / 2)
+  const baseline = top + 15
+  let x = left
   for (const glyph of glyphs) {
-    const t = (x + glyph.advance / 2 - middle) / (total / 2)
-    const rise = Math.round(CAPTION_EM * 0.45 * (1 - t * t))
-    for (const [dx, dy] of glyph.cells) cells.push([Math.round(x) + dx, baseline - rise + dy])
+    if (!glyph) {
+      x += space
+      continue
+    }
+    for (const [dx, dy] of glyph.cells) mark(x + dx, baseline + dy)
     x += glyph.advance
   }
+
+  // Fairy dust drifting round the words.
+  const dust = [
+    [-1.12, -9], [-0.95, -12], [-0.62, -12], [-0.2, -13], [0.12, -12],
+    [0.48, -13], [0.8, -11], [1.1, -8], [-1.2, 4], [-0.78, 9], [-0.05, 11],
+    [0.42, 10], [0.9, 8], [1.24, 3],
+  ]
+  for (const [i, [across, down]] of dust.entries()) {
+    const dx = centre + across * (width / 2 + 6)
+    const dy = baseline + down
+    if (i % 3 === 0) stamp(DIAMOND, dx - 1, dy - 1)
+    else if (i % 5 === 1) stamp(TRIO, dx - 1, dy)
+    else mark(dx, dy)
+  }
   return cells
-}
-
-const CAPTION = 'type anything you want'
-const CAPTION_EM = 12
-// The writing's high-contrast italic breaks up at this small size, so the
-// caption uses a rounder italic that still reads when charted to so few
-// cells.
-export const CAPTION_FONT = 'Lora, Georgia, serif'
-export const CAPTION_FONT_STYLE = 'italic 400'
-const CAPTION_FACE = { style: CAPTION_FONT_STYLE, family: CAPTION_FONT, thicken: 0.35 }
-
-// Picot loops all around the outside of the border: the scalloped edge
-// that finishes a piece of lace.
-function paintPicots(context, geometry) {
-  const { frame, cell, lineWidth, notch } = geometry
-  const radius = cell * 0.95
-  const path = new Path2D()
-  const loop = (gx, gy, angle) => {
-    const x = gx * cell + lineWidth / 2
-    const y = gy * cell + lineWidth / 2
-    path.moveTo(x + Math.cos(angle - Math.PI / 2) * radius, y + Math.sin(angle - Math.PI / 2) * radius)
-    path.arc(x, y, radius, angle - Math.PI / 2, angle + Math.PI / 2)
-  }
-  const corners = outlineCorners(geometry)
-  const clearOfNotches = (x, y) =>
-    corners.every(([cx, cy]) => Math.hypot(x - cx, y - cy) > notch + 1)
-
-  // Top and bottom edges follow the arches.
-  for (let x = frame.left + 1; x <= frame.right; x += 2) {
-    const rise = archOffset(geometry, x)
-    const slope = (archOffset(geometry, x + 0.5) - archOffset(geometry, x - 0.5))
-    const top = frame.top + rise
-    const bottom = frame.bottom + 1 - rise
-    if (clearOfNotches(x, top)) loop(x, top, -Math.PI / 2 + Math.atan(slope))
-    if (clearOfNotches(x, bottom)) loop(x, bottom, Math.PI / 2 + Math.atan(slope))
-  }
-  for (let y = frame.top + 1; y <= frame.bottom; y += 2) {
-    if (clearOfNotches(frame.left, y)) loop(frame.left, y, Math.PI)
-    if (clearOfNotches(frame.right + 1, y)) loop(frame.right + 1, y, 0)
-  }
-  // Around each notch, pointing into it.
-  for (const [cx, cy] of corners) {
-    const steps = Math.round((notch * Math.PI) / 2 / 2)
-    for (let k = 0; k <= steps; k += 1) {
-      const angle = (k / steps) * Math.PI * 2
-      const x = cx + Math.cos(angle) * notch
-      const y = cy + Math.sin(angle) * notch
-      if (insideOutline(geometry, Math.round(x + Math.cos(angle) * 1.5), Math.round(y + Math.sin(angle) * 1.5), 0)) {
-        loop(x, y, angle + Math.PI)
-      }
-    }
-  }
-
-  context.save()
-  context.lineCap = 'round'
-  context.strokeStyle = THREAD_SHADE
-  context.lineWidth = lineWidth * 1.5
-  context.stroke(path)
-  context.strokeStyle = THREAD
-  context.lineWidth = lineWidth * 1.0
-  context.stroke(path)
-  context.restore()
 }
 
 // Soften a finished layer slightly: lace thread is fuzzy, never crisp.
@@ -938,19 +614,93 @@ function soften(layer, amount) {
   context.restore()
 }
 
-function labelHoles(geometry) {
-  const { cell } = geometry
-  return Array.from(document.querySelectorAll('.ph-project-header a')).map(
-    (link) => {
-      const bounds = link.getBoundingClientRect()
-      return {
-        left: Math.floor((bounds.left - 6) / cell),
-        right: Math.floor((bounds.right + 6) / cell),
-        top: Math.floor((bounds.top - 3) / cell),
-        bottom: Math.floor((bounds.bottom + 3) / cell),
+// The header's link labels are embroidered over the lace in white satin
+// stitch, in the same face and size as the (invisible) links underneath,
+// so each label sits exactly where its link can be clicked.
+export const LABEL_FONT = '"Geist Pixel", ui-monospace, monospace'
+
+function embroiderLabels(context) {
+  for (const link of document.querySelectorAll('.ph-project-header a, .lace-unstitch')) {
+    const bounds = link.getBoundingClientRect()
+    const style = getComputedStyle(link)
+    embroiderText(context, link.textContent.trim(), {
+      font: `${style.fontWeight} ${style.fontSize} ${LABEL_FONT}`,
+      x: bounds.left + parseFloat(style.paddingLeft),
+      y: (bounds.top + bounds.bottom) / 2,
+      width: bounds.width,
+      height: bounds.height,
+    })
+  }
+}
+
+// Fill the lettering with short slanted satin stitches laid side by side,
+// each catching a little light along its length, with the slight shadow a
+// raised thread casts on the cloth: embroidered, not printed.
+function embroiderText(context, text, { font, x, y, width, height }) {
+  const scale = 4
+  const margin = 4
+  const box = { left: x - margin, top: y - height / 2 - margin, width: width + margin * 2, height: height + margin * 2 }
+  const guide = document.createElement('canvas')
+  guide.width = Math.ceil(box.width * scale)
+  guide.height = Math.ceil(box.height * scale)
+  const ink = guide.getContext('2d', { willReadFrequently: true })
+  ink.scale(scale, scale)
+  ink.font = font
+  ink.textBaseline = 'middle'
+  ink.fillStyle = '#000'
+  ink.fillText(text, x - box.left, y - box.top)
+  // Satin stitch sits a little proud of the letter's outline.
+  ink.strokeStyle = '#000'
+  ink.lineWidth = 0.6
+  ink.strokeText(text, x - box.left, y - box.top)
+  const pixels = ink.getImageData(0, 0, guide.width, guide.height).data
+  const covered = (px, py) => {
+    const gx = Math.round((px - box.left) * scale)
+    const gy = Math.round((py - box.top) * scale)
+    if (gx < 0 || gy < 0 || gx >= guide.width || gy >= guide.height) return false
+    return pixels[(gy * guide.width + gx) * 4 + 3] > 120
+  }
+
+  const pitch = 0.7
+  const stitches = new Path2D()
+  const glints = new Path2D()
+  for (let py = box.top; py < box.top + box.height; py += pitch) {
+    for (let px = box.left; px < box.left + box.width; px += pitch) {
+      if (!covered(px, py)) continue
+      const jitter = (hash(px * 7, py * 3) - 0.5) * 0.18
+      stitches.moveTo(px - pitch * 0.6, py + pitch * 0.5 + jitter)
+      stitches.lineTo(px + pitch * 0.6, py - pitch * 0.5 + jitter)
+      if (hash(px * 3, py * 5) > 0.55) {
+        glints.moveTo(px - pitch * 0.25, py + pitch * 0.1 + jitter)
+        glints.lineTo(px + pitch * 0.3, py - pitch * 0.35 + jitter)
       }
-    },
-  )
+    }
+  }
+  context.save()
+  // The thick thread dims the mesh softly around the letters, the way dense
+  // embroidery pulls the cloth: a diffuse shade with no hard edge.
+  context.filter = 'blur(3px)'
+  context.font = font
+  context.textBaseline = 'middle'
+  context.lineJoin = 'round'
+  context.strokeStyle = 'rgba(10, 10, 10, 0.75)'
+  context.lineWidth = 5
+  context.strokeText(text, x, y)
+  context.filter = 'none'
+  context.lineCap = 'round'
+  // The thread's own soft shadow on the cloth, just below and to the right.
+  context.translate(0.5, 0.7)
+  context.strokeStyle = 'rgba(0, 0, 0, 0.35)'
+  context.lineWidth = pitch * 1.1
+  context.stroke(stitches)
+  context.translate(-0.5, -0.7)
+  context.strokeStyle = '#efeeea'
+  context.lineWidth = pitch * 1.05
+  context.stroke(stitches)
+  context.strokeStyle = 'rgba(255, 255, 255, 0.9)'
+  context.lineWidth = pitch * 0.35
+  context.stroke(glints)
+  context.restore()
 }
 
 // Sample a cubic Bézier into points.
@@ -1179,8 +929,8 @@ export class LaceRenderer {
     this.layerRows = geometry.rows + this.band + 2
     this.velvetLayer = makeCanvas(width, height, ratio)
     this.meshLayer = makeCanvas(width, height + (MESH_PERIOD + 1) * geometry.cell, ratio)
-    this.holesLayer = makeCanvas(width, height, ratio)
     this.textLayer = makeCanvas(width, this.layerRows * geometry.cell, ratio)
+    this.labelLayer = makeCanvas(width, height, ratio)
     this.bandStart = 0
     this.ornamentKey = ''
     this.paintBase()
@@ -1220,12 +970,11 @@ export class LaceRenderer {
     }
   }
 
-  // The fixed layers: the velvet ground stays put behind the lace, the open
-  // mesh is one repeating strip that slides as the page scrolls, and the
-  // header links get holes cut in the lace above everything else.
+  // The fixed layers: the velvet ground stays put behind the lace, the
+  // open mesh is one repeating strip that slides as the page scrolls, and
+  // the header labels stay embroidered at the top above everything else.
   paintBase() {
     const { geometry } = this
-    const { cell, lineWidth } = geometry
     paintVelvet(this.velvetLayer.context, this.width, this.height)
     paintMesh(this.meshLayer.context, {
       ...geometry,
@@ -1233,58 +982,7 @@ export class LaceRenderer {
     })
     soften(this.meshLayer, this.ratio * 0.3)
 
-    // Cut a hole in the lace under each header link, finished with a solid
-    // edge, so the links stay legible on top of the fabric.
-    const { context } = this.holesLayer
-    for (const hole of labelHoles(geometry)) {
-      context.save()
-      context.beginPath()
-      context.rect(
-        hole.left * cell + lineWidth,
-        hole.top * cell + lineWidth,
-        (hole.right - hole.left + 1) * cell,
-        (hole.bottom - hole.top + 1) * cell,
-      )
-      context.clip()
-      paintVelvet(context, this.width, this.height)
-      context.restore()
-      // A little lace label: a solid edge, a dotted rule above and below,
-      // a flower at each end, and picots hanging from the bottom.
-      for (let y = hole.top - 1; y <= hole.bottom + 1; y += 1) {
-        for (let x = hole.left - 1; x <= hole.right + 1; x += 1) {
-          const outsideY = y < hole.top || y > hole.bottom
-          const outsideX = x < hole.left || x > hole.right
-          if (outsideX !== outsideY) this.drawBlock(context, x, y)
-        }
-      }
-      // A heart at each end, and scalloped picots above and below.
-      const top = Math.round((hole.top + hole.bottom) / 2 - (TINY_HEART.height - 1) / 2)
-      for (const [x, y] of TINY_HEART.cells) {
-        this.drawBlock(context, hole.left - 2 - TINY_HEART.width + x, top + y)
-        this.drawBlock(context, hole.right + 3 + x, top + y)
-      }
-      const radius = cell * 1.2
-      const picots = new Path2D()
-      for (let x = hole.left; x <= hole.right + 1; x += 3) {
-        const px = x * cell + cell / 2
-        const below = (hole.bottom + 2) * cell + lineWidth / 2
-        const above = (hole.top - 1) * cell + lineWidth / 2
-        picots.moveTo(px - radius, below)
-        picots.arc(px, below, radius, Math.PI, 0, true)
-        picots.moveTo(px + radius, above)
-        picots.arc(px, above, radius, 0, Math.PI, true)
-      }
-      context.save()
-      context.lineCap = 'round'
-      context.strokeStyle = THREAD_SHADE
-      context.lineWidth = lineWidth * 1.5
-      context.stroke(picots)
-      context.strokeStyle = THREAD
-      context.lineWidth = lineWidth
-      context.stroke(picots)
-      context.restore()
-    }
-    soften(this.holesLayer, this.ratio * 0.45)
+    embroiderLabels(this.labelLayer.context)
   }
 
   // Map a text cell to document grid coordinates.
@@ -1307,19 +1005,13 @@ export class LaceRenderer {
     const ornamentKey = `${pieceGeometry.frame.bottom}`
     if (ornamentKey !== this.ornamentKey) {
       this.ornaments = [
-        ...frameCells(pieceGeometry),
-        ...bandCells(pieceGeometry),
-        ...ornamentCells(pieceGeometry),
+        ...sealCells(pieceGeometry),
       ]
       this.ornamentKey = ornamentKey
     }
     for (const [x, y] of this.ornaments) {
       if (inBand(x, y - bandStart)) this.drawBlock(context, x, y - bandStart)
     }
-    context.save()
-    context.translate(0, -bandStart * cell)
-    paintPicots(context, pieceGeometry)
-    context.restore()
 
     for (const item of layout.characters) {
       if (!item.glyph || animating.has(item.index)) continue
@@ -1520,15 +1212,9 @@ export class LaceRenderer {
       swing: idleSway + this.anchor.velocity,
       lift: this.lift,
     })
-    this.drawHoles()
-  }
-
-  // The header links' holes sit above everything, thread included.
-  drawHoles() {
-    const { context, ratio } = this
     context.setTransform(1, 0, 0, 1, 0, 0)
-    context.drawImage(this.holesLayer.canvas, 0, 0)
-    context.setTransform(ratio, 0, 0, ratio, 0, 0)
+    context.drawImage(this.labelLayer.canvas, 0, 0)
+    context.setTransform(this.ratio, 0, 0, this.ratio, 0, 0)
   }
 }
 
