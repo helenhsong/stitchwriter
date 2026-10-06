@@ -46,11 +46,11 @@ export function createGeometry(viewportWidth, viewportHeight) {
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
   const headerRows = Math.ceil(HEADER_HEIGHT / cell)
-  // The seal: an embroidered title in an oval of flowers and fairy dust
-  // at the top of the page.
+  // The seal: an embroidered title with a rose and fairy dust at the top
+  // of the page.
   const centre = Math.floor(Math.floor(viewportWidth / cell) / 2)
   const sealTop = headerRows + (compact ? 12 : 10)
-  const sealBottom = sealTop + 48
+  const sealBottom = sealTop + 36
   // Below the seal, open lace for the writing.
   const across = compact
     ? Math.floor(viewportWidth / cell) - 16
@@ -535,79 +535,32 @@ function parseChart(rows) {
   return { width, height: rows.length, cells }
 }
 
-const BLOSSOM = parseChart([
-  '.XX.XX.',
-  'XXX.XXX',
-  'XX.X.XX',
-  '..XXX..',
-  'XX.X.XX',
-  'XXX.XXX',
-  '.XX.XX.',
-])
-
-const FORGET_ME_NOT = parseChart([
-  '.X.X.',
-  'XXXXX',
-  '.X.X.',
-  'XXXXX',
-  '.X.X.',
-])
-
-const BUTTERFLY = parseChart([
-  '.X.........X.',
-  '..X.......X..',
+// A filet rose seen from above, its petals curling in towards the
+// centre, with a leaf on either side beneath it.
+const ROSE = parseChart([
+  '....XXXXX....',
+  '..XXX...XXX..',
+  '.XX..XXX..XX.',
   'XX..X...X..XX',
-  'XXXX.X.X.XXXX',
-  'XXXXX.X.XXXXX',
-  '.XXXX.X.XXXX.',
-  '..XXX.X.XXX..',
-  '...XX.X.XX...',
-  '..XXX.X.XXX..',
-  '.XXXX...XXXX.',
+  'X..X..X..X..X',
+  'X..X.X...X..X',
+  'XX..X...XX.XX',
+  '.XX..XXX..XX.',
+  '..XXX...XXX..',
+  'XX..XXXXX..XX',
+  'XXXX.....XXXX',
   '.XXX.....XXX.',
   '..X.......X..',
 ])
 
-const HEART = parseChart([
-  '.XX.XX.',
-  'XXXXXXX',
-  'XXXXXXX',
-  '.XXXXX.',
-  '..XXX..',
-  '...X...',
-])
+// Fairy dust: open diamonds of four stitches, little trios and lone
+// stitches.
+const DIAMOND = parseChart(['.X.', 'X.X', '.X.'])
+const TRIO = parseChart(['X.X', '.X.'])
 
-const BELLFLOWER = parseChart([
-  '...X...',
-  '..XXX..',
-  '.XXXXX.',
-  '.XXXXX.',
-  'X.X.X.X',
-])
-
-const SPARKLE = parseChart([
-  '..X..',
-  '..X..',
-  'XX.XX',
-  '..X..',
-  '..X..',
-])
-
-const MOON = parseChart([
-  '..XXX',
-  '.XXX.',
-  'XXX..',
-  'XXX..',
-  'XXX..',
-  '.XXX.',
-  '..XXX',
-])
-
-const STAR = parseChart(['.X.', 'XXX', '.X.'])
-
-// The seal over the writing: "type anything" embroidered in the charted
-// script, held in an oval of fairy dust strung with a blossom, a moon, a
-// butterfly, a heart and twinkling stars.
+// The seal over the writing: "type anything" stitched over two lines in
+// the charted script, the second set out to the left of the first, with a
+// rose at its end and fairy dust scattered round about.
 function sealCells(geometry) {
   const { seal, em } = geometry
   const { centre, top } = seal
@@ -621,102 +574,44 @@ function sealCells(geometry) {
     seen.add(key)
     cells.push([gx, gy])
   }
-  // Motifs leave a clearing in the fairy dust around them.
-  const clearings = []
-  const stamp = (chart, cx, cy) => {
-    const left = Math.round(cx - (chart.width - 1) / 2)
-    const head = Math.round(cy - (chart.height - 1) / 2)
-    for (const [x, y] of chart.cells) mark(left + x, head + y)
-    clearings.push([cx, cy, Math.max(chart.width, chart.height) / 2 + 2])
+  const stamp = (chart, x, y) => {
+    for (const [dx, dy] of chart.cells) mark(x + dx, y + dy)
   }
-  const clear = (x, y) => clearings.every(([cx, cy, r]) => Math.hypot(x - cx, y - cy) > r)
-  // A curve worked as a line of stitches, or as dots spaced along it.
-  const trace = (point, length, gap = 0) => {
-    const steps = Math.max(8, Math.ceil(length * 3))
-    let last = null
-    for (let i = 0; i <= steps; i += 1) {
-      const [x, y] = point(i / steps)
-      if (gap && last && Math.hypot(x - last[0], y - last[1]) < gap) continue
-      if (gap && !clear(x, y)) continue
-      mark(x, y)
-      last = [x, y]
+  const glyphsOf = (word) => Array.from(word).map((character) => getGlyph(character, em))
+  const widthOf = (glyphs) => glyphs.reduce((sum, glyph) => sum + glyph.advance, 0)
+  const stitch = (glyphs, x, baseline) => {
+    for (const glyph of glyphs) {
+      for (const [dx, dy] of glyph.cells) mark(x + dx, baseline + dy)
+      x += glyph.advance
     }
   }
 
-  // The title.
-  const title = 'type anything'
-  const glyphs = Array.from(title).map((character) =>
-    /\s/.test(character) ? null : getGlyph(character, em),
-  )
-  const space = 4
-  const width = glyphs.reduce((sum, glyph) => sum + (glyph ? glyph.advance : space), 0)
-  const left = Math.round(centre - width / 2)
-  const right = left + width
-  const baseline = top + 24
-  let x = left
-  for (const glyph of glyphs) {
-    if (!glyph) {
-      x += space
-      continue
-    }
-    for (const [dx, dy] of glyph.cells) mark(x + dx, baseline + dy)
-    x += glyph.advance
-  }
+  const first = glyphsOf('type')
+  const second = glyphsOf('anything')
+  const secondWidth = widthOf(second)
+  const blockWidth = secondWidth + 3 + ROSE.width
+  const left = Math.round(centre - blockWidth / 2)
+  const firstLeft = left + Math.round(secondWidth * 0.3)
+  const firstRight = firstLeft + widthOf(first)
+  const upper = top + 12
+  const lower = upper + 14
+  stitch(first, firstLeft, upper)
+  stitch(second, left, lower)
+  const rose = left + secondWidth + 3
+  stamp(ROSE, rose, lower - 9)
 
-  // A fine swash under the words, curling up into a little spiral at
-  // each end.
-  const under = baseline + 8
-  trace((t) => [left - 1 + t * (width + 2), under + Math.sin(Math.PI * t) * 1.5], width)
-  for (const side of [-1, 1]) {
-    const endX = side < 0 ? left - 1 : right + 1
-    trace((t) => {
-      const angle = Math.PI / 2 - side * t * Math.PI * 1.5
-      const radius = 4.5 * (1 - t * 0.6)
-      return [endX + Math.cos(angle) * radius, under - 4.5 + Math.sin(angle) * radius]
-    }, 22)
-  }
-
-  // The oval: motifs first, so the fairy dust parts around them.
-  const cy = baseline - 3
-  const rx = width / 2 + 14
-  const ry = 19
-  const at = (degrees, push = 0) => {
-    const angle = (degrees * Math.PI) / 180
-    return [centre + Math.cos(angle) * (rx + push), cy - Math.sin(angle) * (ry + push)]
-  }
-  stamp(BLOSSOM, ...at(90))
-  stamp(FORGET_ME_NOT, ...at(90 - 16))
-  stamp(FORGET_ME_NOT, ...at(90 + 16))
-  stamp(MOON, ...at(148, 1))
-  stamp(BUTTERFLY, ...at(30, 4))
-  stamp(SPARKLE, ...at(180))
-  stamp(SPARKLE, ...at(0))
-  stamp(HEART, ...at(270))
-  stamp(BELLFLOWER, ...at(270 - 24))
-  stamp(BELLFLOWER, ...at(270 + 24))
-  stamp(STAR, ...at(205))
-  stamp(STAR, ...at(335))
-  trace((t) => at(t * 360), 2 * Math.PI * rx, 2.4)
-
-  // Twinkles strewn about the oval: lone stitches and tiny stars, placed
-  // by a fixed hand so the seal is the same every time.
-  let seed = 7
-  const random = () => {
-    seed = (seed * 16807) % 2147483647
-    return seed / 2147483647
-  }
-  for (let i = 0; i < 26; i += 1) {
-    const degrees = random() * 360
-    const push = (random() < 0.5 ? -1 : 1) * (3 + random() * 5)
-    const [tx, ty] = at(degrees, push)
-    if (ty < top - 4 || !clear(tx, ty)) continue
-    if (tx > left - 2 && tx < right + 2 && ty > baseline - 14 && ty < under + 4) continue
-    if (random() < 0.3) stamp(STAR, tx, ty)
-    else {
-      mark(tx, ty)
-      clearings.push([tx, ty, 1.5])
-    }
-  }
+  // Fairy dust, set by hand around the words as on the chart.
+  stamp(DIAMOND, firstLeft - 9, upper - 10)
+  stamp(DIAMOND, firstRight + 6, upper - 13)
+  mark(firstRight + 20, upper - 9)
+  stamp(DIAMOND, rose + 4, upper - 4)
+  stamp(DIAMOND, left + 8, upper + 2)
+  stamp(TRIO, left - 6, lower + 5)
+  mark(left + 18, lower + 3)
+  stamp(TRIO, left + secondWidth * 0.32, lower + 8)
+  mark(left + secondWidth * 0.55, lower + 7)
+  stamp(DIAMOND, rose - 2, lower + 5)
+  mark(rose + ROSE.width + 1, lower + 6)
   return cells
 }
 
