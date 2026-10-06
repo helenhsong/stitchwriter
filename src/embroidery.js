@@ -607,7 +607,7 @@ function soften(layer, amount) {
   context.restore()
 }
 
-// The header links' lettering, embroidered finely in black thread.
+// The header buttons' lettering, embroidered finely in black thread.
 const BUTTON_FONT = '700 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
 
 // A slim fabric button for each header link, worked into the lace and
@@ -616,7 +616,7 @@ function labelButtons(geometry) {
   const { cell, cols } = geometry
   const measure = getMeasureContext(10)
   measure.font = BUTTON_FONT
-  return Array.from(document.querySelectorAll('.ph-project-header a')).map(
+  return Array.from(document.querySelectorAll('.ph-project-header a, .lace-unstitch')).map(
     (link) => {
       link.style.padding = ''
       link.style.margin = ''

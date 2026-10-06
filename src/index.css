@@ -8,14 +8,9 @@ html:root {
   --project-fg: #f3f3f1;
   --project-muted-fg: #b9b9b5;
   --project-hover-fg: #ffffff;
-  /* Let the lace show through the fixed header; the README view below puts
-     the solid page colour back. */
+  /* Let the lace show through the fixed header. */
   --background: transparent;
   background: var(--project-bg);
-}
-
-html:root[data-ph-open] {
-  --background: var(--project-bg);
 }
 
 body {
@@ -39,10 +34,6 @@ body {
   display: block;
 }
 
-html[data-ph-open] .lace-page {
-  display: none;
-}
-
 .lace-input {
   position: fixed;
   z-index: -1;
@@ -56,9 +47,30 @@ html[data-ph-open] .lace-page {
   resize: none;
 }
 
-/* Over the lace, the header links are fabric buttons drawn on the canvas
-   with their labels stitched in; the link text itself stays in place,
-   invisible, so it is still what gets clicked, focused and read aloud. */
-html:not([data-ph-open]) .ph-project-header a {
+/* Over the lace, the header link and the Unstitch all button are fabric
+   buttons drawn on the canvas with their labels stitched in; their own
+   text stays in place, invisible, so it is still what gets clicked,
+   focused and read aloud. */
+.ph-project-header a,
+.lace-unstitch {
   color: transparent;
+}
+
+/* Where the header's right-hand link used to sit, in the same type. */
+.lace-unstitch {
+  position: fixed;
+  z-index: 11;
+  top: 24px;
+  right: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: 12px / 150% 'iAWriterMonoV-Regular', 'iA Writer Mono V', system-ui, sans-serif;
+}
+
+@media (max-width: 420px) {
+  .lace-unstitch {
+    right: 20px;
+  }
 }
