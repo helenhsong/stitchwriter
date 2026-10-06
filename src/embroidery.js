@@ -155,7 +155,7 @@ export function getGlyph(character, em, face) {
           covered += pixels[offset + sx * 4 + 3] / 255
         }
       }
-      if (covered / area >= (face?.coverage ?? COVERAGE)) row.push([cx - pad, cy - ascent])
+      if (covered / area >= COVERAGE) row.push([cx - pad, cy - ascent])
     }
     if (row.length) rowsOfCells.push(row)
   }
@@ -614,56 +614,93 @@ function soften(layer, amount) {
   context.restore()
 }
 
-// The header's link labels are stitched into the lace in a pixel face,
-// whose square dots fall naturally onto a stitch grid: at this em each of
-// the face's pixels is exactly one stitch.
+// The header's link labels are embroidered over the lace in white satin
+// stitch, in the same face and size as the (invisible) links underneath,
+// so each label sits exactly where its link can be clicked.
 export const LABEL_FONT = '"Geist Pixel", ui-monospace, monospace'
-const LABEL_FACE = { family: LABEL_FONT, style: 'normal 400', thicken: 0, coverage: 0.3 }
-const LABEL_EM = 13
 
-// Stitch each header link's label into the lace where the link sits, and
-// grow the (invisible) link to cover its stitches so the whole label can
-// be clicked. The labels are worked at half the mesh's scale, as fine
-// embroidery.
-function labelCells(geometry, width) {
-  const cell = geometry.cell / 2
-  const cells = []
+function embroiderLabels(context) {
   for (const link of document.querySelectorAll('.ph-project-header a, .lace-unstitch')) {
-    link.style.padding = ''
-    link.style.margin = ''
     const bounds = link.getBoundingClientRect()
-    const glyphs = Array.from(link.textContent.trim()).map((character) =>
-      /\s/.test(character) ? null : getGlyph(character, LABEL_EM, LABEL_FACE),
-    )
-    const space = Math.round(LABEL_EM * 0.35)
-    // A stitch of air between letters keeps them from running together.
-    const tracking = 1
-    const span = Math.ceil(
-      glyphs.reduce((sum, glyph) => sum + (glyph ? glyph.advance + tracking : space), 0),
-    )
-    const middle = Math.round((bounds.top + bounds.bottom) / 2 / cell)
-    // Lined up with the link's outer edge: the left one starts where it
-    // starts, the right one ends where it ends.
-    const onLeft = bounds.left + bounds.right < width
-    const left = onLeft
-      ? Math.round(bounds.left / cell)
-      : Math.round(bounds.right / cell) - span
-    const baseline = middle + Math.round(LABEL_EM * 0.35)
-    let x = left
-    for (const glyph of glyphs) {
-      if (glyph) for (const [dx, dy] of glyph.cells) cells.push([Math.round(x + dx), baseline + dy])
-      x += glyph ? glyph.advance + tracking : space
-    }
-    const top = baseline - Math.round(LABEL_EM * 0.8)
-    const bottom = baseline + Math.round(LABEL_EM * 0.25)
-    const padLeft = Math.max(0, bounds.left - left * cell)
-    const padRight = Math.max(0, (left + span) * cell - bounds.right)
-    const padTop = Math.max(0, bounds.top - top * cell)
-    const padBottom = Math.max(0, (bottom + 1) * cell - bounds.bottom)
-    link.style.padding = `${padTop}px ${padRight}px ${padBottom}px ${padLeft}px`
-    link.style.margin = `${-padTop}px ${-padRight}px ${-padBottom}px ${-padLeft}px`
+    const style = getComputedStyle(link)
+    embroiderText(context, link.textContent.trim(), {
+      font: `${style.fontWeight} ${style.fontSize} ${LABEL_FONT}`,
+      x: bounds.left + parseFloat(style.paddingLeft),
+      y: (bounds.top + bounds.bottom) / 2,
+      width: bounds.width,
+      height: bounds.height,
+    })
   }
-  return { cell, cells }
+}
+
+// Fill the lettering with short slanted satin stitches laid side by side,
+// each catching a little light along its length, with the slight shadow a
+// raised thread casts on the cloth: embroidered, not printed.
+function embroiderText(context, text, { font, x, y, width, height }) {
+  const scale = 4
+  const margin = 4
+  const box = { left: x - margin, top: y - height / 2 - margin, width: width + margin * 2, height: height + margin * 2 }
+  const guide = document.createElement('canvas')
+  guide.width = Math.ceil(box.width * scale)
+  guide.height = Math.ceil(box.height * scale)
+  const ink = guide.getContext('2d', { willReadFrequently: true })
+  ink.scale(scale, scale)
+  ink.font = font
+  ink.textBaseline = 'middle'
+  ink.fillStyle = '#000'
+  ink.fillText(text, x - box.left, y - box.top)
+  // Satin stitch sits a little proud of the letter's outline.
+  ink.strokeStyle = '#000'
+  ink.lineWidth = 0.6
+  ink.strokeText(text, x - box.left, y - box.top)
+  const pixels = ink.getImageData(0, 0, guide.width, guide.height).data
+  const covered = (px, py) => {
+    const gx = Math.round((px - box.left) * scale)
+    const gy = Math.round((py - box.top) * scale)
+    if (gx < 0 || gy < 0 || gx >= guide.width || gy >= guide.height) return false
+    return pixels[(gy * guide.width + gx) * 4 + 3] > 120
+  }
+
+  const pitch = 0.7
+  const stitches = new Path2D()
+  const glints = new Path2D()
+  for (let py = box.top; py < box.top + box.height; py += pitch) {
+    for (let px = box.left; px < box.left + box.width; px += pitch) {
+      if (!covered(px, py)) continue
+      const jitter = (hash(px * 7, py * 3) - 0.5) * 0.18
+      stitches.moveTo(px - pitch * 0.6, py + pitch * 0.5 + jitter)
+      stitches.lineTo(px + pitch * 0.6, py - pitch * 0.5 + jitter)
+      if (hash(px * 3, py * 5) > 0.55) {
+        glints.moveTo(px - pitch * 0.25, py + pitch * 0.1 + jitter)
+        glints.lineTo(px + pitch * 0.3, py - pitch * 0.35 + jitter)
+      }
+    }
+  }
+  context.save()
+  // The thick thread dims the mesh softly around the letters, the way dense
+  // embroidery pulls the cloth: a diffuse shade with no hard edge.
+  context.filter = 'blur(3px)'
+  context.font = font
+  context.textBaseline = 'middle'
+  context.lineJoin = 'round'
+  context.strokeStyle = 'rgba(10, 10, 10, 0.75)'
+  context.lineWidth = 5
+  context.strokeText(text, x, y)
+  context.filter = 'none'
+  context.lineCap = 'round'
+  // The thread's own soft shadow on the cloth, just below and to the right.
+  context.translate(0.5, 0.7)
+  context.strokeStyle = 'rgba(0, 0, 0, 0.35)'
+  context.lineWidth = pitch * 1.1
+  context.stroke(stitches)
+  context.translate(-0.5, -0.7)
+  context.strokeStyle = '#efeeea'
+  context.lineWidth = pitch * 1.05
+  context.stroke(stitches)
+  context.strokeStyle = 'rgba(255, 255, 255, 0.9)'
+  context.lineWidth = pitch * 0.35
+  context.stroke(glints)
+  context.restore()
 }
 
 // Sample a cubic Bézier into points.
@@ -935,7 +972,7 @@ export class LaceRenderer {
 
   // The fixed layers: the velvet ground stays put behind the lace, the
   // open mesh is one repeating strip that slides as the page scrolls, and
-  // the header labels stay stitched at the top above everything else.
+  // the header labels stay embroidered at the top above everything else.
   paintBase() {
     const { geometry } = this
     paintVelvet(this.velvetLayer.context, this.width, this.height)
@@ -945,19 +982,7 @@ export class LaceRenderer {
     })
     soften(this.meshLayer, this.ratio * 0.3)
 
-    const labels = labelCells(geometry, this.width)
-    const scale = labels.cell / geometry.cell
-    const { context } = this.labelLayer
-    context.save()
-    context.scale(scale, scale)
-    // The fine labels part the mesh around them so they can be read.
-    context.fillStyle = VELVET
-    for (const [gx, gy] of labels.cells) {
-      context.fillRect((gx - 1) * geometry.cell, (gy - 1) * geometry.cell, geometry.cell * 3, geometry.cell * 3)
-    }
-    soften(this.labelLayer, this.ratio * 1.5)
-    for (const [gx, gy] of labels.cells) this.drawBlock(context, gx, gy)
-    context.restore()
+    embroiderLabels(this.labelLayer.context)
   }
 
   // Map a text cell to document grid coordinates.
