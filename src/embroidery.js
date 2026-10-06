@@ -2,10 +2,9 @@
 // and text is "stitched" by filling cells solid, the way filet crochet
 // pictures are worked.
 
-import { CHARTED_SCRIPT, SPACE_ADVANCE } from './chartedScript.js'
 
-export const STITCH_FONT = '"Playfair Display", Georgia, serif'
-export const STITCH_FONT_STYLE = 'italic 400'
+export const STITCH_FONT = '"Libre Baskerville", Georgia, serif'
+export const STITCH_FONT_STYLE = 'normal 400'
 export const HEADER_HEIGHT = 66
 
 const VELVET = '#0a0a0a'
@@ -39,10 +38,10 @@ function hash(x, y) {
 export function createGeometry(viewportWidth, viewportHeight) {
   const compact = viewportWidth < 560
   // A fine mesh, like thread-weight filet lace: more, smaller cells.
-  const cell = compact ? 3 : clamp(Math.round(viewportWidth / 480) + 1, 4, 5)
-  // Letters are charted at one stitch per cell; em sizes everything else
-  // (fallback punctuation, spacing, the caret) to match them.
-  const em = 10
+  const cell = compact ? 2 : clamp(Math.round(viewportWidth / 480), 3, 4)
+  // Letters are worked from the serif at this many cells to the em, enough
+  // for its serifs and bowls to read clearly in stitches.
+  const em = 15
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
   const headerRows = Math.ceil(HEADER_HEIGHT / cell)
@@ -50,7 +49,8 @@ export function createGeometry(viewportWidth, viewportHeight) {
   // of the page, between the header buttons on wide screens.
   const centre = Math.floor(Math.floor(viewportWidth / cell) / 2)
   const sealTop = compact ? headerRows + 2 : 6
-  const sealBottom = sealTop + 28
+  const sealBaseline = sealTop + Math.round(em * 1.4)
+  const sealBottom = sealBaseline + Math.round(em * 1.2)
   // Below the seal, open lace for the writing.
   const across = compact
     ? Math.floor(viewportWidth / cell) - 16
@@ -64,15 +64,17 @@ export function createGeometry(viewportWidth, viewportHeight) {
   // The writing area doubles as the piece's extent, which grows with it.
   const frame = { ...inner }
   return {
+    compact,
     cell,
     em,
     seal: {
       centre,
       top: sealTop,
+      baseline: sealBaseline,
       bottom: sealBottom,
       // Where the header buttons line up with the seal's lettering, on
       // screens wide enough to share a row with it.
-      middle: compact ? null : (sealTop + 11) * cell,
+      middle: compact ? null : (sealBaseline - Math.round(em * 0.3)) * cell,
     },
     cols,
     rows,
@@ -109,17 +111,6 @@ export function getGlyph(character, em, face) {
   const cached = glyphCache.get(cacheKey)
   if (cached) return cached
 
-  // Letters come from the charted script alphabet, worked row by row.
-  const charted = !face && CHARTED_SCRIPT.get(character)
-  if (charted) {
-    const cells = charted.rows
-      .filter((row) => row.length)
-      .flatMap((row, index) => (index % 2 ? [...row].reverse() : row))
-    const glyph = { cells, advance: charted.advance }
-    glyphCache.set(cacheKey, glyph)
-    return glyph
-  }
-
   const measure = getMeasureContext(em, face)
   const advance = measure.measureText(character).width / SUBSAMPLE
   const pad = Math.ceil(em * 0.5)
@@ -155,7 +146,7 @@ export function getGlyph(character, em, face) {
           covered += pixels[offset + sx * 4 + 3] / 255
         }
       }
-      if (covered / area >= COVERAGE) row.push([cx - pad, cy - ascent])
+      if (covered / area >= (face?.coverage ?? COVERAGE)) row.push([cx - pad, cy - ascent])
     }
     if (row.length) rowsOfCells.push(row)
   }
@@ -172,7 +163,7 @@ export function getGlyph(character, em, face) {
 // edge; lines are counted from the text area's top.
 export function layoutText(text, geometry) {
   const { em, textCols } = geometry
-  const spaceAdvance = SPACE_ADVANCE
+  const spaceAdvance = Math.round(em * 0.3)
   const characters = Array.from(text)
   const placed = []
   let line = 0
@@ -547,11 +538,11 @@ function parseChart(rows) {
 const DIAMOND = parseChart(['.X.', 'X.X', '.X.'])
 const TRIO = parseChart(['X.X', '.X.'])
 
-// The seal over the writing: "type anything" stitched in the charted
-// script, with fairy dust scattered round about.
+// The seal over the writing: "Type anything" stitched in the serif, with
+// fairy dust scattered round about.
 function sealCells(geometry) {
   const { seal, em } = geometry
-  const { centre, top } = seal
+  const { centre, baseline } = seal
   const seen = new Set()
   const cells = []
   const mark = (x, y) => {
@@ -565,13 +556,12 @@ function sealCells(geometry) {
   const stamp = (chart, x, y) => {
     for (const [dx, dy] of chart.cells) mark(x + dx, y + dy)
   }
-  const glyphs = Array.from('type anything').map((character) =>
+  const glyphs = Array.from('Type anything').map((character) =>
     /\s/.test(character) ? null : getGlyph(character, em),
   )
-  const space = 4
+  const space = Math.round(em * 0.3)
   const width = glyphs.reduce((sum, glyph) => sum + (glyph ? glyph.advance : space), 0)
   const left = Math.round(centre - width / 2)
-  const baseline = top + 15
   let x = left
   for (const glyph of glyphs) {
     if (!glyph) {
@@ -588,9 +578,10 @@ function sealCells(geometry) {
     [0.48, -13], [0.8, -11], [1.1, -8], [-1.2, 4], [-0.78, 9], [-0.05, 11],
     [0.42, 10], [0.9, 8], [1.24, 3],
   ]
+  const spread = em / 10
   for (const [i, [across, down]] of dust.entries()) {
-    const dx = centre + across * (width / 2 + 6)
-    const dy = baseline + down
+    const dx = centre + across * (width / 2 + 6 * spread)
+    const dy = baseline + Math.round(down * spread)
     if (i % 3 === 0) stamp(DIAMOND, dx - 1, dy - 1)
     else if (i % 5 === 1) stamp(TRIO, dx - 1, dy)
     else mark(dx, dy)
@@ -612,6 +603,57 @@ function soften(layer, amount) {
   context.filter = `blur(${amount}px)`
   context.drawImage(copy, 0, 0)
   context.restore()
+}
+
+// The header's link labels are stitched into the lace in a pixel face,
+// whose square dots fall naturally onto the filet grid.
+export const LABEL_FONT = '"Geist Pixel", ui-monospace, monospace'
+const LABEL_FACE = { family: LABEL_FONT, style: 'normal 400', thicken: 0, coverage: 0.3 }
+const LABEL_EM = 13
+
+// Stitch each header link's label into the lace where the link sits, and
+// grow the (invisible) link to cover its stitches so the whole
+// label can be clicked. The labels are worked at half the mesh's scale,
+// as fine embroidery, so they sit lighter than the writing.
+function labelCells(geometry, width) {
+  const cell = geometry.cell / 2
+  const cells = []
+  for (const link of document.querySelectorAll('.ph-project-header a, .lace-unstitch')) {
+    link.style.padding = ''
+    link.style.margin = ''
+    const bounds = link.getBoundingClientRect()
+    const glyphs = Array.from(link.textContent.trim()).map((character) =>
+      /\s/.test(character) ? null : getGlyph(character, LABEL_EM, LABEL_FACE),
+    )
+    const space = Math.round(LABEL_EM * 0.35)
+    // A stitch of air between letters keeps them from running together.
+    const tracking = 1
+    const span = Math.ceil(
+      glyphs.reduce((sum, glyph) => sum + (glyph ? glyph.advance + tracking : space), 0),
+    )
+    const middle = Math.round((bounds.top + bounds.bottom) / 2 / cell)
+    // Lined up with the link's outer edge: the left one starts where it
+    // starts, the right one ends where it ends.
+    const onLeft = bounds.left + bounds.right < width
+    const left = onLeft
+      ? Math.round(bounds.left / cell)
+      : Math.round(bounds.right / cell) - span
+    const baseline = middle + Math.round(LABEL_EM * 0.35)
+    let x = left
+    for (const glyph of glyphs) {
+      if (glyph) for (const [dx, dy] of glyph.cells) cells.push([Math.round(x + dx), baseline + dy])
+      x += glyph ? glyph.advance + tracking : space
+    }
+    const top = baseline - Math.round(LABEL_EM * 0.8)
+    const bottom = baseline + Math.round(LABEL_EM * 0.25)
+    const padLeft = Math.max(0, bounds.left - left * cell)
+    const padRight = Math.max(0, (left + span) * cell - bounds.right)
+    const padTop = Math.max(0, bounds.top - top * cell)
+    const padBottom = Math.max(0, (bottom + 1) * cell - bounds.bottom)
+    link.style.padding = `${padTop}px ${padRight}px ${padBottom}px ${padLeft}px`
+    link.style.margin = `${-padTop}px ${-padRight}px ${-padBottom}px ${-padLeft}px`
+  }
+  return { cell, cells }
 }
 
 // Sample a cubic Bézier into points.
@@ -841,6 +883,7 @@ export class LaceRenderer {
     this.velvetLayer = makeCanvas(width, height, ratio)
     this.meshLayer = makeCanvas(width, height + (MESH_PERIOD + 1) * geometry.cell, ratio)
     this.textLayer = makeCanvas(width, this.layerRows * geometry.cell, ratio)
+    this.labelLayer = makeCanvas(width, height, ratio)
     this.bandStart = 0
     this.ornamentKey = ''
     this.paintBase()
@@ -880,8 +923,9 @@ export class LaceRenderer {
     }
   }
 
-  // The fixed layers: the velvet ground stays put behind the lace, and the
-  // open mesh is one repeating strip that slides as the page scrolls.
+  // The fixed layers: the velvet ground stays put behind the lace, the
+  // open mesh is one repeating strip that slides as the page scrolls, and
+  // the header labels stay stitched at the top above everything else.
   paintBase() {
     const { geometry } = this
     paintVelvet(this.velvetLayer.context, this.width, this.height)
@@ -890,6 +934,19 @@ export class LaceRenderer {
       rows: geometry.rows + MESH_PERIOD + 1,
     })
     soften(this.meshLayer, this.ratio * 0.3)
+    const labels = labelCells(geometry, this.width)
+    const scale = labels.cell / geometry.cell
+    const { context } = this.labelLayer
+    context.save()
+    context.scale(scale, scale)
+    // The fine labels part the mesh around them so they can be read.
+    context.fillStyle = VELVET
+    for (const [gx, gy] of labels.cells) {
+      context.fillRect((gx - 1) * geometry.cell, (gy - 1) * geometry.cell, geometry.cell * 3, geometry.cell * 3)
+    }
+    soften(this.labelLayer, this.ratio * 1.5)
+    for (const [gx, gy] of labels.cells) this.drawBlock(context, gx, gy)
+    context.restore()
   }
 
   // Map a text cell to document grid coordinates.
@@ -1119,6 +1176,9 @@ export class LaceRenderer {
       swing: idleSway + this.anchor.velocity,
       lift: this.lift,
     })
+    context.setTransform(1, 0, 0, 1, 0, 0)
+    context.drawImage(this.labelLayer.canvas, 0, 0)
+    context.setTransform(this.ratio, 0, 0, this.ratio, 0, 0)
   }
 }
 
