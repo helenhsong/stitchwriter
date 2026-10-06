@@ -155,7 +155,7 @@ export function getGlyph(character, em, face) {
           covered += pixels[offset + sx * 4 + 3] / 255
         }
       }
-      if (covered / area >= COVERAGE) row.push([cx - pad, cy - ascent])
+      if (covered / area >= (face?.coverage ?? COVERAGE)) row.push([cx - pad, cy - ascent])
     }
     if (row.length) rowsOfCells.push(row)
   }
@@ -614,6 +614,58 @@ function soften(layer, amount) {
   context.restore()
 }
 
+// The header's link labels are stitched into the lace in a pixel face,
+// whose square dots fall naturally onto a stitch grid: at this em each of
+// the face's pixels is exactly one stitch.
+export const LABEL_FONT = '"Geist Pixel", ui-monospace, monospace'
+const LABEL_FACE = { family: LABEL_FONT, style: 'normal 400', thicken: 0, coverage: 0.3 }
+const LABEL_EM = 13
+
+// Stitch each header link's label into the lace where the link sits, and
+// grow the (invisible) link to cover its stitches so the whole label can
+// be clicked. The labels are worked finer than the mesh, at about 1.5px a
+// stitch, as delicate embroidery.
+function labelCells(geometry, width) {
+  const cell = geometry.cell / Math.max(1, Math.round(geometry.cell / 1.5))
+  const cells = []
+  for (const link of document.querySelectorAll('.ph-project-header a, .lace-unstitch')) {
+    link.style.padding = ''
+    link.style.margin = ''
+    const bounds = link.getBoundingClientRect()
+    const glyphs = Array.from(link.textContent.trim()).map((character) =>
+      /\s/.test(character) ? null : getGlyph(character, LABEL_EM, LABEL_FACE),
+    )
+    const space = Math.round(LABEL_EM * 0.35)
+    // A stitch of air between letters keeps them from running together.
+    const tracking = 1
+    const span = Math.ceil(
+      glyphs.reduce((sum, glyph) => sum + (glyph ? glyph.advance + tracking : space), 0),
+    )
+    const middle = Math.round((bounds.top + bounds.bottom) / 2 / cell)
+    // Lined up with the link's outer edge: the left one starts where it
+    // starts, the right one ends where it ends.
+    const onLeft = bounds.left + bounds.right < width
+    const left = onLeft
+      ? Math.round(bounds.left / cell)
+      : Math.round(bounds.right / cell) - span
+    const baseline = middle + Math.round(LABEL_EM * 0.35)
+    let x = left
+    for (const glyph of glyphs) {
+      if (glyph) for (const [dx, dy] of glyph.cells) cells.push([Math.round(x + dx), baseline + dy])
+      x += glyph ? glyph.advance + tracking : space
+    }
+    const top = baseline - Math.round(LABEL_EM * 0.8)
+    const bottom = baseline + Math.round(LABEL_EM * 0.25)
+    const padLeft = Math.max(0, bounds.left - left * cell)
+    const padRight = Math.max(0, (left + span) * cell - bounds.right)
+    const padTop = Math.max(0, bounds.top - top * cell)
+    const padBottom = Math.max(0, (bottom + 1) * cell - bounds.bottom)
+    link.style.padding = `${padTop}px ${padRight}px ${padBottom}px ${padLeft}px`
+    link.style.margin = `${-padTop}px ${-padRight}px ${-padBottom}px ${-padLeft}px`
+  }
+  return { cell, cells }
+}
+
 // Sample a cubic Bézier into points.
 function bezierPoints(p0, p1, p2, p3, count) {
   const points = []
@@ -841,6 +893,7 @@ export class LaceRenderer {
     this.velvetLayer = makeCanvas(width, height, ratio)
     this.meshLayer = makeCanvas(width, height + (MESH_PERIOD + 1) * geometry.cell, ratio)
     this.textLayer = makeCanvas(width, this.layerRows * geometry.cell, ratio)
+    this.labelLayer = makeCanvas(width, height, ratio)
     this.bandStart = 0
     this.ornamentKey = ''
     this.paintBase()
@@ -880,8 +933,9 @@ export class LaceRenderer {
     }
   }
 
-  // The fixed layers: the velvet ground stays put behind the lace, and the
-  // open mesh is one repeating strip that slides as the page scrolls.
+  // The fixed layers: the velvet ground stays put behind the lace, the
+  // open mesh is one repeating strip that slides as the page scrolls, and
+  // the header labels stay stitched at the top above everything else.
   paintBase() {
     const { geometry } = this
     paintVelvet(this.velvetLayer.context, this.width, this.height)
@@ -890,6 +944,20 @@ export class LaceRenderer {
       rows: geometry.rows + MESH_PERIOD + 1,
     })
     soften(this.meshLayer, this.ratio * 0.3)
+
+    const labels = labelCells(geometry, this.width)
+    const scale = labels.cell / geometry.cell
+    const { context } = this.labelLayer
+    context.save()
+    context.scale(scale, scale)
+    // The fine labels part the mesh around them so they can be read.
+    context.fillStyle = VELVET
+    for (const [gx, gy] of labels.cells) {
+      context.fillRect((gx - 1) * geometry.cell, (gy - 1) * geometry.cell, geometry.cell * 3, geometry.cell * 3)
+    }
+    soften(this.labelLayer, this.ratio * 1.5)
+    for (const [gx, gy] of labels.cells) this.drawBlock(context, gx, gy)
+    context.restore()
   }
 
   // Map a text cell to document grid coordinates.
@@ -1119,6 +1187,9 @@ export class LaceRenderer {
       swing: idleSway + this.anchor.velocity,
       lift: this.lift,
     })
+    context.setTransform(1, 0, 0, 1, 0, 0)
+    context.drawImage(this.labelLayer.canvas, 0, 0)
+    context.setTransform(this.ratio, 0, 0, this.ratio, 0, 0)
   }
 }
 

@@ -47,28 +47,25 @@ body {
   resize: none;
 }
 
-/* The header link and Unstitch all are plain pixel lettering, lowered on
-   wide screens to sit level with the seal's words. */
+/* The header link and Unstitch all are stitched into the lace on the
+   canvas; their own text stays in place, invisible, so it is still what
+   gets clicked, focused and read aloud. On wide screens they are lowered
+   to sit level with the seal's words. */
+:root {
+  /* How far the header labels sit in from the sides of the page. */
+  --header-inset: 64px;
+}
+
 .ph-project-header {
   padding-top: calc(var(--seal-middle, 34px) - 10px);
+  padding-right: var(--header-inset);
+  padding-left: var(--header-inset);
 }
 
 .ph-project-header a,
 .lace-unstitch {
-  color: var(--project-fg);
+  color: transparent;
   font: 14px / 20px 'Geist Pixel', ui-monospace, monospace;
-  /* A dark halo parts the lace behind the letters so they stay legible. */
-  text-shadow:
-    0 0 2px var(--project-bg),
-    0 0 4px var(--project-bg),
-    0 0 8px var(--project-bg);
-}
-
-.ph-project-header a:hover,
-.lace-unstitch:hover {
-  color: var(--project-hover-fg);
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 /* Where the header's right-hand link used to sit. */
@@ -76,15 +73,15 @@ body {
   position: fixed;
   z-index: 11;
   top: calc(var(--seal-middle, 34px) - 10px);
-  right: 32px;
+  right: var(--header-inset);
   padding: 0;
   border: 0;
   background: none;
   cursor: pointer;
 }
 
-@media (max-width: 420px) {
-  .lace-unstitch {
-    right: 20px;
+@media (max-width: 560px) {
+  :root {
+    --header-inset: 28px;
   }
 }

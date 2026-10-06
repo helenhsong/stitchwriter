@@ -13,6 +13,7 @@ import '@fontsource/geist-pixel/latin-400.css'
 import {
   HEADER_HEIGHT,
   LaceRenderer,
+  LABEL_FONT,
   STITCH_FONT,
   STITCH_FONT_STYLE,
   caretIndexAt,
@@ -69,7 +70,10 @@ function useFontReady() {
     let active = true
     const timeout = new Promise((resolve) => window.setTimeout(resolve, 1800))
     const fontLoad = document.fonts
-      ? document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`)
+      ? Promise.all([
+          document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`),
+          document.fonts.load(`88px ${LABEL_FONT}`),
+        ])
       : Promise.resolve()
 
     Promise.race([fontLoad, timeout]).then(() => {
