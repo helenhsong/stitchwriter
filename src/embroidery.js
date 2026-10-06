@@ -46,11 +46,11 @@ export function createGeometry(viewportWidth, viewportHeight) {
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
   const headerRows = Math.ceil(HEADER_HEIGHT / cell)
-  // The seal: an embroidered title with a rose and fairy dust at the top
-  // of the page.
+  // The seal: an embroidered title with swirls and fairy dust at the top
+  // of the page, between the header buttons on wide screens.
   const centre = Math.floor(Math.floor(viewportWidth / cell) / 2)
-  const sealTop = headerRows + (compact ? 12 : 10)
-  const sealBottom = sealTop + 36
+  const sealTop = compact ? headerRows + 2 : 6
+  const sealBottom = sealTop + 28
   // Below the seal, open lace for the writing.
   const across = compact
     ? Math.floor(viewportWidth / cell) - 16
@@ -535,32 +535,14 @@ function parseChart(rows) {
   return { width, height: rows.length, cells }
 }
 
-// A filet rose seen from above, its petals curling in towards the
-// centre, with a leaf on either side beneath it.
-const ROSE = parseChart([
-  '....XXXXX....',
-  '..XXX...XXX..',
-  '.XX..XXX..XX.',
-  'XX..X...X..XX',
-  'X..X..X..X..X',
-  'X..X.X...X..X',
-  'XX..X...XX.XX',
-  '.XX..XXX..XX.',
-  '..XXX...XXX..',
-  'XX..XXXXX..XX',
-  'XXXX.....XXXX',
-  '.XXX.....XXX.',
-  '..X.......X..',
-])
-
 // Fairy dust: open diamonds of four stitches, little trios and lone
 // stitches.
 const DIAMOND = parseChart(['.X.', 'X.X', '.X.'])
 const TRIO = parseChart(['X.X', '.X.'])
 
-// The seal over the writing: "type anything" stitched over two lines in
-// the charted script, the second set out to the left of the first, with a
-// rose at its end and fairy dust scattered round about.
+// The seal over the writing: "type anything" stitched in the charted
+// script, with fine thread swirls curling away from it and fairy dust
+// scattered round about.
 function sealCells(geometry) {
   const { seal, em } = geometry
   const { centre, top } = seal
@@ -577,41 +559,80 @@ function sealCells(geometry) {
   const stamp = (chart, x, y) => {
     for (const [dx, dy] of chart.cells) mark(x + dx, y + dy)
   }
-  const glyphsOf = (word) => Array.from(word).map((character) => getGlyph(character, em))
-  const widthOf = (glyphs) => glyphs.reduce((sum, glyph) => sum + glyph.advance, 0)
-  const stitch = (glyphs, x, baseline) => {
-    for (const glyph of glyphs) {
-      for (const [dx, dy] of glyph.cells) mark(x + dx, baseline + dy)
-      x += glyph.advance
+  // A curve worked as a line of stitches, or as dots spaced along it.
+  const trace = (point, length, gap = 0) => {
+    const steps = Math.max(8, Math.ceil(length * 3))
+    let last = null
+    for (let i = 0; i <= steps; i += 1) {
+      const [x, y] = point(i / steps)
+      if (gap && last && Math.hypot(x - last[0], y - last[1]) < gap) continue
+      mark(x, y)
+      last = [x, y]
     }
   }
+  // A flourish: a tendril that runs out from (x, y) with a gentle wave,
+  // then winds into an open spiral. side sets which way it runs, curl
+  // whether the spiral turns up (-1) or down (1).
+  const flourish = (x, y, reach, radius, side, curl, wave = 1.5) => {
+    const endX = x + side * reach
+    const centreY = y + curl * radius
+    const start = (-curl * Math.PI) / 2
+    trace((t) => {
+      if (t < 0.45) {
+        const u = t / 0.45
+        return [x + side * reach * u, y + Math.sin(Math.PI * 2 * u) * wave * curl]
+      }
+      const u = (t - 0.45) / 0.55
+      const angle = start + curl * side * u * Math.PI * 2.1
+      const r = radius * (1 - u * 0.5)
+      return [endX + Math.cos(angle) * r, centreY + Math.sin(angle) * r]
+    }, reach + radius * 9)
+  }
 
-  const first = glyphsOf('type')
-  const second = glyphsOf('anything')
-  const secondWidth = widthOf(second)
-  const blockWidth = secondWidth + 3 + ROSE.width
-  const left = Math.round(centre - blockWidth / 2)
-  const firstLeft = left + Math.round(secondWidth * 0.3)
-  const firstRight = firstLeft + widthOf(first)
-  const upper = top + 12
-  const lower = upper + 14
-  stitch(first, firstLeft, upper)
-  stitch(second, left, lower)
-  const rose = left + secondWidth + 3
-  stamp(ROSE, rose, lower - 9)
+  const glyphs = Array.from('type anything').map((character) =>
+    /\s/.test(character) ? null : getGlyph(character, em),
+  )
+  const space = 4
+  const width = glyphs.reduce((sum, glyph) => sum + (glyph ? glyph.advance : space), 0)
+  const left = Math.round(centre - width / 2)
+  const right = left + width
+  const baseline = top + 15
+  let x = left
+  for (const glyph of glyphs) {
+    if (!glyph) {
+      x += space
+      continue
+    }
+    for (const [dx, dy] of glyph.cells) mark(x + dx, baseline + dy)
+    x += glyph.advance
+  }
 
-  // Fairy dust, set by hand around the words as on the chart.
-  stamp(DIAMOND, firstLeft - 9, upper - 10)
-  stamp(DIAMOND, firstRight + 6, upper - 13)
-  mark(firstRight + 20, upper - 9)
-  stamp(DIAMOND, rose + 4, upper - 4)
-  stamp(DIAMOND, left + 8, upper + 2)
-  stamp(TRIO, left - 6, lower + 5)
-  mark(left + 18, lower + 3)
-  stamp(TRIO, left + secondWidth * 0.32, lower + 8)
-  mark(left + secondWidth * 0.55, lower + 7)
-  stamp(DIAMOND, rose - 2, lower + 5)
-  mark(rose + ROSE.width + 1, lower + 6)
+  // Flourishes: one curling up from each end of the words, and a pair
+  // waving out from the middle above and below them, curling away.
+  const above = baseline - 12
+  const below = baseline + 7
+  for (const side of [-1, 1]) {
+    const end = side < 0 ? left - 2 : right + 2
+    flourish(end, baseline - 2, 7, 5, side, -1)
+    flourish(centre + side * 3, above, width * 0.24, 3.5, side, -1, 2)
+    flourish(centre + side * 3, below, width * 0.3, 3.5, side, 1, 2)
+  }
+  stamp(DIAMOND, centre - 1, above - 1)
+  stamp(DIAMOND, centre - 1, below - 1)
+
+  // Fairy dust drifting off the swirls.
+  const dust = [
+    [-1.12, -9], [-0.95, -12], [-0.62, -12], [-0.2, -13], [0.12, -12],
+    [0.48, -13], [0.8, -11], [1.1, -8], [-1.2, 4], [-0.78, 9], [-0.05, 11],
+    [0.42, 10], [0.9, 8], [1.24, 3],
+  ]
+  for (const [i, [across, down]] of dust.entries()) {
+    const dx = centre + across * (width / 2 + 12)
+    const dy = baseline + down
+    if (i % 3 === 0) stamp(DIAMOND, dx - 1, dy - 1)
+    else if (i % 5 === 1) stamp(TRIO, dx - 1, dy)
+    else mark(dx, dy)
+  }
   return cells
 }
 
