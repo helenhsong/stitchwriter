@@ -39,7 +39,7 @@ function hash(x, y) {
 export function createGeometry(viewportWidth, viewportHeight) {
   const compact = viewportWidth < 560
   // A fine mesh, like thread-weight filet lace: more, smaller cells.
-  const cell = compact ? 2.5 : clamp(Math.round(viewportWidth / 480), 3, 4)
+  const cell = compact ? 3 : clamp(Math.round(viewportWidth / 480) + 1, 4, 5)
   // Letters are charted at one stitch per cell; em sizes everything else
   // (fallback punctuation, spacing, the caret) to match them.
   const em = 10
@@ -58,7 +58,7 @@ export function createGeometry(viewportWidth, viewportHeight) {
   const inner = {
     left: centre - Math.floor(across / 2),
     right: centre - Math.floor(across / 2) + across - 1,
-    top: sealBottom + (compact ? 8 : 10),
+    top: sealBottom + (compact ? 16 : 20),
     bottom: Math.floor(viewportHeight / cell) - 1 - (compact ? 10 : 16),
   }
   // The writing area doubles as the piece's extent, which grows with it.
