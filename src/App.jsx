@@ -129,6 +129,15 @@ function App() {
   // Rows the piece must keep while deleted letters are still unravelling,
   // so the border only draws in as the stitches come out.
   const [ghostRows, setGhostRows] = useState(0)
+  // While deleted letters are unpicked, the writing after them stays where
+  // it was, and closes up once the last stitch is out.
+  const [held, setHeldState] = useState(null)
+  const heldRef = useRef(null)
+  const setHeld = useCallback((value) => {
+    heldRef.current = value
+    setHeldState(value)
+  }, [])
+  const holdTimerRef = useRef(0)
   const sceneRef = useRef(null)
   const { ready: fontReady, face: stitchFace } = useStitchFace()
   const reducedMotion = useReducedMotion()
@@ -188,7 +197,10 @@ function App() {
     }
   }, [geometry])
 
-  useEffect(() => () => window.clearTimeout(ghostTimerRef.current), [])
+  useEffect(() => () => {
+    window.clearTimeout(ghostTimerRef.current)
+    window.clearTimeout(holdTimerRef.current)
+  }, [])
 
   // Schedule newly typed characters to be stitched one after another. Only
   // the changed span is new: text before and after an insertion keeps its
@@ -238,6 +250,23 @@ function App() {
       }
     }
     ghostsRef.current = ghosts
+    const lastEnd = ghosts.reduce((latest, ghost) => Math.max(latest, ghost.end), 0)
+    const current = heldRef.current
+    const heldBase = current?.text === previousTextRef.current ? current.layout : oldLayout
+    if (removed > 0 && added === 0 && suffix > 0 && heldBase && lastEnd > now) {
+      const characters = layout.characters.map((item) => {
+        const before = heldBase.characters[item.index + removed]
+        return item.index < prefix || !before
+          ? item
+          : { ...item, col: before.col, end: before.end, line: before.line }
+      })
+      setHeld({ text, layout: { ...layout, characters, height: Math.max(layout.height, heldBase.height) } })
+      window.clearTimeout(holdTimerRef.current)
+      holdTimerRef.current = window.setTimeout(() => setHeld(null), lastEnd - now)
+    } else if (current && (current.text !== text || layout !== oldLayout)) {
+      window.clearTimeout(holdTimerRef.current)
+      setHeld(null)
+    }
     previousLayoutRef.current = layout
     holdForGhosts()
     const bulk = added > 6
@@ -264,12 +293,12 @@ function App() {
 
     birthsRef.current = births
     previousTextRef.current = text
-  }, [holdForGhosts, layout, reducedMotion, text])
+  }, [holdForGhosts, layout, reducedMotion, setHeld, text])
 
   useLayoutEffect(() => {
     sceneRef.current = layout
       ? {
-          layout,
+          layout: held?.text === text ? held.layout : layout,
           maxScroll,
           pieceGeometry,
           births: birthsRef.current,
@@ -280,7 +309,7 @@ function App() {
           reducedMotion,
         }
       : null
-  }, [caret, caretCell, layout, maxScroll, pieceGeometry, placeholder, reducedMotion, selection])
+  }, [caret, caretCell, held, layout, maxScroll, pieceGeometry, placeholder, reducedMotion, selection, text])
 
   useEffect(() => {
     if (!fontReady || !canvasRef.current) return undefined
