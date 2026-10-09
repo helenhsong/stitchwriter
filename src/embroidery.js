@@ -218,7 +218,8 @@ function getMeasureContext(em, face) {
 
 // Rasterize one character to filet cells. Cells are relative to the glyph's
 // origin column and baseline row, and are ordered the way they are worked:
-// row by row, turning back at the end of each row like crochet.
+// top to bottom, each row left to right, so the needle finishes a letter at
+// its bottom right, after it rather than before it.
 export function getGlyph(character, em, face) {
   const cacheKey = `${em}:${face?.family ?? ''}:${character}`
   const cached = glyphCache.get(cacheKey)
@@ -239,7 +240,7 @@ export function getGlyph(character, em, face) {
           ),
         ),
       )
-    const cells = rows.flatMap((row, index) => (index % 2 ? [...row].reverse() : row))
+    const cells = rows.flat()
     const glyph = { cells, advance: charted.advance * scale, stitches: cells.length / scale ** 2 }
     glyphCache.set(cacheKey, glyph)
     return glyph
@@ -299,9 +300,7 @@ export function getGlyph(character, em, face) {
     if (row.length) rowsOfCells.push(row)
   }
 
-  const cells = rowsOfCells.flatMap((row, index) =>
-    index % 2 ? row.reverse() : row,
-  )
+  const cells = rowsOfCells.flat()
   const glyph = { cells, advance, stitches: cells.length * (CHART_EM / em) ** 2 }
   glyphCache.set(cacheKey, glyph)
   return glyph
