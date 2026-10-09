@@ -52,9 +52,16 @@ html[data-ph-open] .lace-page {
    veil and under README itself; the stitching fades away on the canvas.
    The corner links fade out from the moment README is opened, and back
    in when it closes. */
+/* README sits straight on the lace: the veil's dark wash stays hidden and
+   the lace paints below everything, so the scrolling body's thin bar is
+   drawn above it. */
 html[data-ph-open] .lace-canvas {
-  z-index: 4;
+  z-index: -1;
   pointer-events: none;
+}
+
+html[data-ph-open] .ph-readme-veil {
+  visibility: hidden;
 }
 
 .lace-copy,
@@ -124,4 +131,33 @@ html:has(.ph-project-header a[aria-expanded='true']) :is(.lace-copy, .lace-unsti
   .lace-unstitch {
     right: 20px;
   }
+}
+
+/* README, as Helen asked: square pictures, and body text a step quieter
+   than the white title while staying easy to read on the lace. */
+html .ph-readme {
+  color: #c6c6c1;
+}
+
+html .ph-readme img {
+  border-radius: 0;
+}
+
+/* README is taller than the window, and a scrolling root would put its
+   track in a dark strip beside the lace. While README is open the body
+   scrolls instead, inside the window, so the thin bar floats on the lace. */
+html[data-ph-open] {
+  overflow: hidden;
+}
+
+html[data-ph-open] body {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  background: transparent;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  scrollbar-width: thin;
+  scrollbar-color: gray transparent;
 }
