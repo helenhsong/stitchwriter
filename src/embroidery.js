@@ -694,6 +694,21 @@ const CHARTED_INK = 11
 // stitches.
 const DIAMOND = parseChart(['.X.', 'X.X', '.X.'])
 const TRIO = parseChart(['X.X', '.X.'])
+// A filet rose in a pair of leaves, as worked round the edge of a doily.
+// The leaves reach out to the left; the right-hand spray is mirrored.
+const SPRAY = parseChart([
+  'XXX.........XXXXX...',
+  'XXXXX.....XXXXXXXXX.',
+  '.XX.XX...XXX.....XXX',
+  '..XXXXX..XX.XXXXX.XX',
+  '....XXXX.XX.X...XX.X',
+  '......XXXXX.X.X..X.X',
+  '....XXXX.XX.X.XXXX.X',
+  '..XXXXX..XXX.X....XX',
+  '.XX.XX....XXX.XXXXX.',
+  'XXXXX......XXXXXXX..',
+  'XXX..........XXX....',
+])
 
 // The seal over the writing: "type anything" stitched in the writing's
 // typeface, with fairy dust scattered round about. It is worked one stitch
@@ -738,11 +753,28 @@ function sealCells(geometry, face) {
     x += glyph.advance
   }
 
+  // A spray of rose and leaves at each end of the words,
+  // charted at the words' own stitch size.
+  const unit = Math.max(1, Math.round((inkBottom - inkTop + 1) / CHARTED_INK))
+  const motif = (chart, x, y, mirror) => {
+    for (const [dx, dy] of chart.cells) {
+      const cx = mirror ? chart.width - 1 - dx : dx
+      for (let i = 0; i < unit; i += 1) {
+        for (let j = 0; j < unit; j += 1) mark(x + cx * unit + i, y + dy * unit + j)
+      }
+    }
+  }
+  const middle = baseline + Math.round((inkTop + inkBottom) / 2)
+  const gap = 3 * unit
+  const sprayTop = middle - Math.floor((SPRAY.height * unit) / 2)
+  motif(SPRAY, left - gap - SPRAY.width * unit, sprayTop, false)
+  motif(SPRAY, left + width + gap, sprayTop, true)
+
   // Fairy dust drifting round the words.
   const dust = [
-    [-1.12, -9], [-0.95, -12], [-0.62, -12], [-0.2, -13], [0.12, -12],
-    [0.48, -13], [0.8, -11], [1.1, -8], [-1.2, 4], [-0.78, 9], [-0.05, 11],
-    [0.42, 10], [0.9, 8], [1.24, 3],
+    [-0.95, -12], [-0.62, -12], [-0.2, -13], [0.12, -12],
+    [0.48, -13], [0.8, -11], [-0.78, 9], [-0.05, 11],
+    [0.42, 10], [0.9, 8],
   ]
   for (const [i, [across, down]] of dust.entries()) {
     const dx = centre + across * (width / 2 + 6)
@@ -1268,8 +1300,10 @@ export class LaceRenderer {
     context.scale(scale, scale)
     context.translate(-centre * cell, -(middle - bandStart) * cell)
     const sealStitches = new Set()
+    // It is drawn scaled about its middle, so cull it by rows only, and
+    // loosely.
     for (const [x, y] of this.ornaments.cells) {
-      if (!inBand(x, y - bandStart)) continue
+      if (y - bandStart < -40 || y - bandStart > layerRows + 40) continue
       this.drawBlock(context, x, y - bandStart)
       sealStitches.add(`${x},${y}`)
     }
