@@ -218,8 +218,10 @@ function getMeasureContext(em, face) {
 
 // Rasterize one character to filet cells. Cells are relative to the glyph's
 // origin column and baseline row, and are ordered the way they are worked:
-// top to bottom, each row left to right, so the needle finishes a letter at
-// its bottom right, after it rather than before it.
+// left to right, each column top to bottom, so the needle always sits at the
+// letter's right edge, after it rather than before it.
+const byColumns = (cells) => cells.sort(([ax, ay], [bx, by]) => ax - bx || ay - by)
+
 export function getGlyph(character, em, face) {
   const cacheKey = `${em}:${face?.family ?? ''}:${character}`
   const cached = glyphCache.get(cacheKey)
@@ -240,7 +242,7 @@ export function getGlyph(character, em, face) {
           ),
         ),
       )
-    const cells = rows.flat()
+    const cells = byColumns(rows.flat())
     const glyph = { cells, advance: charted.advance * scale, stitches: cells.length / scale ** 2 }
     glyphCache.set(cacheKey, glyph)
     return glyph
@@ -300,7 +302,7 @@ export function getGlyph(character, em, face) {
     if (row.length) rowsOfCells.push(row)
   }
 
-  const cells = rowsOfCells.flat()
+  const cells = byColumns(rowsOfCells.flat())
   const glyph = { cells, advance, stitches: cells.length * (CHART_EM / em) ** 2 }
   glyphCache.set(cacheKey, glyph)
   return glyph
@@ -685,10 +687,11 @@ function parseChart(rows) {
   return { width, height: rows.length, cells }
 }
 
-// Fairy dust: open diamonds of four stitches, little trios and lone
-// stitches.
 // How many rows the charted script's ink spans, from -7 to 3.
 const CHARTED_INK = 11
+
+// Fairy dust: open diamonds of four stitches, little trios and lone
+// stitches.
 const DIAMOND = parseChart(['.X.', 'X.X', '.X.'])
 const TRIO = parseChart(['X.X', '.X.'])
 
@@ -785,6 +788,40 @@ function raise(layer, ratio) {
   context.shadowOffsetX = 0.6 * ratio
   context.shadowOffsetY = 1 * ratio
   context.drawImage(copy, 0, 0)
+  context.restore()
+}
+
+// Lay a faint twist over the worked stitches, so solid letters read as
+// rows of plied thread rather than flat blocks: fine slanted strands, each
+// a little shadow beside a little sheen, shifted with the band so the
+// twist stays put on the page.
+function twist(layer, ratio, cell, rowOffset) {
+  const { context } = layer
+  const period = Math.max(3, Math.round(cell * 0.9 * ratio))
+  const tile = document.createElement('canvas')
+  tile.width = period
+  tile.height = period
+  const ply = tile.getContext('2d')
+  ply.lineWidth = Math.max(1, period * 0.28)
+  for (const [shift, colour] of [
+    [0, 'rgba(70, 70, 66, 0.2)'],
+    [period * 0.45, 'rgba(255, 255, 255, 0.22)'],
+  ]) {
+    ply.strokeStyle = colour
+    ply.beginPath()
+    for (const base of [-period, 0, period]) {
+      ply.moveTo(base + shift, period)
+      ply.lineTo(base + shift + period, 0)
+    }
+    ply.stroke()
+  }
+  const pattern = context.createPattern(tile, 'repeat')
+  pattern.setTransform(new DOMMatrix().translate(0, -((rowOffset * cell * ratio) % period)))
+  context.save()
+  context.setTransform(1, 0, 0, 1, 0, 0)
+  context.globalCompositeOperation = 'source-atop'
+  context.fillStyle = pattern
+  context.fillRect(0, 0, layer.canvas.width, layer.canvas.height)
   context.restore()
 }
 
@@ -1160,6 +1197,7 @@ export class LaceRenderer {
         if (inBand(gx, gy)) this.drawBlock(context, gx, gy)
       }
     }
+    twist(this.textLayer, this.ratio, cell, bandStart)
     soften(this.textLayer, this.ratio * 0.3)
     raise(this.textLayer, this.ratio)
   }
