@@ -156,14 +156,16 @@ function hash(x, y) {
   return value - Math.floor(value)
 }
 
-export function createGeometry(viewportWidth, viewportHeight) {
+export function createGeometry(viewportWidth, viewportHeight, face) {
   const compact = viewportWidth < 560
   // A fine, tight mesh, the same at every window size.
   const cell = MESH_CELL
   // Letters are charted at one stitch per cell on phones and two on wider
   // screens; em sizes everything else (fallback punctuation, spacing, the
   // caret) to match them.
-  const em = CHART_EM * (compact ? 1 : 2)
+  // A pixel face can't be worked smaller than one stitch per pixel, so on
+  // phones the writing grows to the face's own pixel size.
+  const em = compact && face?.grid > CHART_EM * 1.3 ? face.grid : CHART_EM * (compact ? 1 : 2)
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
   // The seal: an embroidered title with fairy dust at the top
