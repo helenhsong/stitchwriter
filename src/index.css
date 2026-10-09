@@ -9,9 +9,14 @@ html:root {
   /* The header's links, in white. */
   --project-muted-fg: #ffffff;
   --project-hover-fg: #ffffff;
-  /* Let the lace show through the fixed header. */
+  /* Let the lace show through the fixed header; the README view below puts
+     the solid page colour back. */
   --background: transparent;
   background: var(--project-bg);
+}
+
+html:root[data-ph-open] {
+  --background: var(--project-bg);
 }
 
 body {
@@ -35,6 +40,12 @@ body {
   display: block;
 }
 
+html[data-ph-open] .lace-page,
+html[data-ph-open] .lace-unstitch,
+html[data-ph-open] .lace-copy {
+  display: none;
+}
+
 .lace-input {
   position: fixed;
   z-index: -1;
@@ -48,27 +59,24 @@ body {
   resize: none;
 }
 
-/* Unstitch all takes the place of the header's right-hand link, in the
-   header's own type and spacing. */
+/* Copy text and Unstitch all sit in the bottom corners, in the header's
+   own type. */
+.lace-copy,
 .lace-unstitch {
   position: fixed;
   z-index: 11;
-  top: 24px;
-  right: 32px;
+  bottom: 24px;
   padding: 0;
   border: 0;
   background: none;
 }
 
-/* Copy text sits in the bottom right corner, in the same type. */
 .lace-copy {
-  position: fixed;
-  z-index: 11;
+  left: 32px;
+}
+
+.lace-unstitch {
   right: 32px;
-  bottom: 24px;
-  padding: 0;
-  border: 0;
-  background: none;
 }
 
 .lace-copy:disabled {
@@ -77,8 +85,11 @@ body {
 }
 
 @media (max-width: 420px) {
-  .lace-unstitch,
   .lace-copy {
+    left: 20px;
+  }
+
+  .lace-unstitch {
     right: 20px;
   }
 }

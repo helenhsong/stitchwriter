@@ -9,6 +9,7 @@ import {
 import { ProjectHeader } from '@helenhsong/ui'
 import '@helenhsong/ui/style.css'
 import '@fontsource/playfair-display/latin-400-italic.css'
+import readme from '../README.md?raw'
 import {
   HEADER_HEIGHT,
   LaceRenderer,
@@ -83,6 +84,24 @@ function useFontReady() {
   return ready
 }
 
+// ProjectHeader marks <html data-ph-open> while its README panel is showing.
+function useReadmeOpen() {
+  const [open, setOpen] = useState(() =>
+    document.documentElement.hasAttribute('data-ph-open'),
+  )
+
+  useEffect(() => {
+    const root = document.documentElement
+    const update = () => setOpen(root.hasAttribute('data-ph-open'))
+    const observer = new MutationObserver(update)
+    observer.observe(root, { attributes: true, attributeFilter: ['data-ph-open'] })
+    update()
+    return () => observer.disconnect()
+  }, [])
+
+  return open
+}
+
 function codePointLength(value) {
   return Array.from(value).length
 }
@@ -106,6 +125,7 @@ function App() {
   const fontReady = useFontReady()
   const reducedMotion = useReducedMotion()
   const viewport = useViewport()
+  const readmeOpen = useReadmeOpen()
 
   const geometry = useMemo(
     () => createGeometry(viewport.width, viewport.height),
@@ -254,14 +274,14 @@ function App() {
   }, [caret, caretCell, layout, maxScroll, pieceGeometry, placeholder, reducedMotion])
 
   useEffect(() => {
-    if (!fontReady || !canvasRef.current) return undefined
+    if (!fontReady || readmeOpen || !canvasRef.current) return undefined
     const renderer = new LaceRenderer(canvasRef.current)
     renderer.resize(viewport.width, viewport.height, geometry)
     rendererRef.current = renderer
-  }, [fontReady, geometry, viewport.height, viewport.width])
+  }, [fontReady, geometry, readmeOpen, viewport.height, viewport.width])
 
   useEffect(() => {
-    if (!fontReady) return undefined
+    if (!fontReady || readmeOpen) return undefined
     let frame = 0
 
     const paint = (now) => {
@@ -290,12 +310,12 @@ function App() {
       cancelAnimationFrame(frame)
       window.removeEventListener('scroll', onScroll)
     }
-  }, [caret, fontReady, geometry, reducedMotion, text])
+  }, [caret, fontReady, geometry, readmeOpen, reducedMotion, text])
 
   // Ready to type as soon as the page opens, and any key typed while focus
   // is elsewhere on the page goes to the lace.
   useEffect(() => {
-    if (!fontReady) return undefined
+    if (!fontReady || readmeOpen) return undefined
     const input = inputRef.current
     input?.focus({ preventScroll: true })
 
@@ -309,7 +329,7 @@ function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [fontReady])
+  }, [fontReady, readmeOpen])
 
   // Keep the insertion point on screen as the piece grows. This only runs
   // when the writing or the insertion point changes, never on scroll, so
@@ -405,7 +425,7 @@ function App() {
 
   return (
     <>
-      <ProjectHeader />
+      <ProjectHeader readme={readme} />
       <button
         type="button"
         // The header's own label style, so it matches helenhsong.com.

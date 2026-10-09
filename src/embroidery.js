@@ -26,8 +26,12 @@ const BLOCK_VARIANTS = 6
 // The mesh pattern repeats every this many rows, so the open lace can
 // scroll smoothly with the page by sliding one painted strip.
 const MESH_PERIOD = 16
-// The "type anything" seal is drawn at this share of the writing's size.
-const SEAL_SCALE = 0.6
+// The mesh is worked at one fixed gauge: each open hole is this many CSS
+// pixels across.
+const MESH_CELL = 2.5
+// Letters are charted at this em; a larger em works each charted stitch
+// as a square of cells.
+const CHART_EM = 10
 // Mesh thread width as a share of the filled blocks' thread.
 const MESH_THREAD = 0.55
 
@@ -42,35 +46,35 @@ function hash(x, y) {
 
 export function createGeometry(viewportWidth, viewportHeight) {
   const compact = viewportWidth < 560
-  // A fine mesh, like thread-weight filet lace: more, smaller cells.
-  const cell = compact ? 3 : clamp(Math.round(viewportWidth / 480) + 1, 4, 5)
-  // Letters are charted at one stitch per cell; em sizes everything else
-  // (fallback punctuation, spacing, the caret) to match them.
-  const em = 10
+  // A fine, tight mesh, the same at every window size.
+  const cell = MESH_CELL
+  // Letters are charted at one stitch per cell on phones and two on wider
+  // screens; em sizes everything else (fallback punctuation, spacing, the
+  // caret) to match them.
+  const em = CHART_EM * (compact ? 1 : 2)
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
-  const headerRows = Math.ceil(HEADER_HEIGHT / cell)
   // The seal: an embroidered title with fairy dust at the top
-  // of the page, between the header buttons on wide screens.
+  // of the page, between the header links on wide screens. It is charted
+  // one stitch per cell, smaller still on phones.
   const centre = Math.floor(Math.floor(viewportWidth / cell) / 2)
-  const sealTop = compact ? headerRows + 2 : 6
-  const sealBottom = sealTop + 28
+  const sealTop = Math.round((compact ? 114 : 80) / cell) - 14
   // Below the seal, open lace for the writing.
   const across = compact
-    ? Math.floor(viewportWidth / cell) - 16
+    ? Math.floor(viewportWidth / cell) - Math.round(48 / cell)
     : Math.round(Math.min(viewportWidth * 0.56, 760) / cell)
   const inner = {
     left: centre - Math.floor(across / 2),
     right: centre - Math.floor(across / 2) + across - 1,
-    top: sealBottom + (compact ? 16 : 20),
-    bottom: Math.floor(viewportHeight / cell) - 1 - (compact ? 10 : 16),
+    top: Math.round((compact ? 204 : 216) / cell),
+    bottom: Math.floor(viewportHeight / cell) - 1 - Math.round((compact ? 30 : 64) / cell),
   }
   // The writing area doubles as the piece's extent, which grows with it.
   const frame = { ...inner }
   return {
     cell,
     em,
-    seal: { centre, top: sealTop, bottom: sealBottom },
+    seal: { centre, top: sealTop, scale: compact ? 0.72 : 1 },
     cols,
     rows,
     frame,
@@ -106,13 +110,23 @@ export function getGlyph(character, em, face) {
   const cached = glyphCache.get(cacheKey)
   if (cached) return cached
 
-  // Letters come from the charted script alphabet, worked row by row.
+  // Letters come from the charted script alphabet, worked row by row. At a
+  // larger em each charted stitch becomes a square of cells, keeping its
+  // bottom edge on the baseline.
   const charted = !face && CHARTED_SCRIPT.get(character)
   if (charted) {
-    const cells = charted.rows
+    const scale = Math.max(1, Math.round(em / CHART_EM))
+    const rows = charted.rows
       .filter((row) => row.length)
-      .flatMap((row, index) => (index % 2 ? [...row].reverse() : row))
-    const glyph = { cells, advance: charted.advance }
+      .flatMap((row) =>
+        Array.from({ length: scale }, (_, j) =>
+          row.flatMap(([x, y]) =>
+            Array.from({ length: scale }, (_, i) => [x * scale + i, y * scale + j - (scale - 1)]),
+          ),
+        ),
+      )
+    const cells = rows.flatMap((row, index) => (index % 2 ? [...row].reverse() : row))
+    const glyph = { cells, advance: charted.advance * scale, stitches: cells.length / scale ** 2 }
     glyphCache.set(cacheKey, glyph)
     return glyph
   }
@@ -160,7 +174,7 @@ export function getGlyph(character, em, face) {
   const cells = rowsOfCells.flatMap((row, index) =>
     index % 2 ? row.reverse() : row,
   )
-  const glyph = { cells, advance }
+  const glyph = { cells, advance, stitches: cells.length * (CHART_EM / em) ** 2 }
   glyphCache.set(cacheKey, glyph)
   return glyph
 }
@@ -169,7 +183,7 @@ export function getGlyph(character, em, face) {
 // edge; lines are counted from the text area's top.
 export function layoutText(text, geometry) {
   const { em, textCols } = geometry
-  const spaceAdvance = SPACE_ADVANCE
+  const spaceAdvance = SPACE_ADVANCE * Math.max(1, Math.round(em / CHART_EM))
   const characters = Array.from(text)
   const placed = []
   let line = 0
@@ -550,8 +564,8 @@ const TRIO = parseChart(['X.X', '.X.'])
 // The seal over the writing: "type anything" stitched in the charted
 // script, with fairy dust scattered round about.
 function sealCells(geometry) {
-  const { seal, em } = geometry
-  const { centre, top } = seal
+  const { centre, top } = geometry.seal
+  const em = CHART_EM
   const seen = new Set()
   const cells = []
   const mark = (x, y) => {
@@ -916,13 +930,13 @@ export class LaceRenderer {
       ]
       this.ornamentKey = ornamentKey
     }
-    // The seal is worked finer than the writing: its blocks are drawn at a
-    // smaller scale about its middle, so it sits in the same place.
-    const { centre, top } = pieceGeometry.seal
+    // The seal is worked finer than the writing, one stitch per cell; on
+    // phones its blocks are drawn smaller still, about its middle.
+    const { centre, top, scale } = pieceGeometry.seal
     const middle = top + 14
     context.save()
     context.translate(centre * cell, (middle - bandStart) * cell)
-    context.scale(SEAL_SCALE, SEAL_SCALE)
+    context.scale(scale, scale)
     context.translate(-centre * cell, -(middle - bandStart) * cell)
     for (const [x, y] of this.ornaments) {
       if (inBand(x, y - bandStart)) this.drawBlock(context, x, y - bandStart)
@@ -1132,5 +1146,5 @@ export class LaceRenderer {
 }
 
 export function stitchDuration(glyph) {
-  return clamp(glyph.cells.length * 5, 280, 650)
+  return clamp(glyph.stitches * 5, 280, 650)
 }
