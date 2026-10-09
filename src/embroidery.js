@@ -836,7 +836,17 @@ function frayPaths(layout, selection, geometry, toGrid) {
   const { cell, baselineOffset, lineHeight } = geometry
   const hairs = new Path2D()
   const fuzz = new Path2D()
+  const halo = new Path2D()
   const sides = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+  const hair = (x, y, angle, length, bend) => {
+    hairs.moveTo(x, y)
+    hairs.quadraticCurveTo(
+      x + Math.cos(angle + bend) * length * 0.55,
+      y + Math.sin(angle + bend) * length * 0.55,
+      x + Math.cos(angle) * length,
+      y + Math.sin(angle) * length,
+    )
+  }
   for (const item of layout.characters) {
     if (!item.glyph || item.index < selection.start || item.index >= selection.end) continue
     const baseRow = baselineOffset + item.line * lineHeight
@@ -844,26 +854,29 @@ function frayPaths(layout, selection, geometry, toGrid) {
     const filled = new Set(cells.map(({ gx, gy }) => `${gx},${gy}`))
     for (const { gx, gy } of cells) {
       fuzz.rect(gx * cell - cell * 0.35, gy * cell - cell * 0.35, cell * 1.7, cell * 1.7)
+      halo.rect(gx * cell - cell * 0.9, gy * cell - cell * 0.9, cell * 2.8, cell * 2.8)
+      // Loose fibres stand off every exposed edge of the stitching...
       sides.forEach(([sx, sy], side) => {
         if (filled.has(`${gx + sx},${gy + sy}`)) return
-        if (hash(gx * 3.1 + side, gy * 1.7 - side) > 0.42) return
-        const along = hash(gx + side * 5.3, gy * 2.9)
-        const x = (gx + 0.5 + sx * 0.5 + (sy ? along - 0.5 : 0)) * cell
-        const y = (gy + 0.5 + sy * 0.5 + (sx ? along - 0.5 : 0)) * cell
-        const angle = Math.atan2(sy, sx) + (hash(gy * 7.7, gx + side) - 0.5) * 1.3
-        const length = cell * (0.9 + hash(gx * 1.3, gy * 5.1 + side) * 2.2)
-        const bend = (hash(side * 9.1 + gx, gy) - 0.5) * 1.8
-        hairs.moveTo(x, y)
-        hairs.quadraticCurveTo(
-          x + Math.cos(angle + bend) * length * 0.55,
-          y + Math.sin(angle + bend) * length * 0.55,
-          x + Math.cos(angle) * length,
-          y + Math.sin(angle) * length,
-        )
+        for (let strand = 0; strand < 2; strand++) {
+          const seed = side + strand * 4
+          if (hash(gx * 3.1 + seed, gy * 1.7 - seed) > (strand ? 0.24 : 0.7)) continue
+          const along = hash(gx + seed * 5.3, gy * 2.9)
+          const x = (gx + 0.5 + sx * 0.5 + (sy ? along - 0.5 : 0)) * cell
+          const y = (gy + 0.5 + sy * 0.5 + (sx ? along - 0.5 : 0)) * cell
+          const angle = Math.atan2(sy, sx) + (hash(gy * 7.7, gx + seed) - 0.5) * 1.5
+          const length = cell * (1 + hash(gx * 1.3, gy * 5.1 + seed) * 2.8)
+          hair(x, y, angle, length, (hash(seed * 9.1 + gx, gy) - 0.5) * 2)
+        }
       })
+      // ...and a few short ones lift off the face of the stitches.
+      if (hash(gx * 0.7 + 11, gy * 1.9) < 0.18) {
+        const angle = hash(gx * 4.3, gy * 0.9 + 3) * Math.PI * 2
+        hair((gx + 0.5) * cell, (gy + 0.5) * cell, angle, cell * (0.8 + hash(gy, gx * 2.2) * 0.9), 0.8)
+      }
     }
   }
-  return { hairs, fuzz }
+  return { hairs, fuzz, halo }
 }
 
 export class LaceRenderer {
@@ -1119,7 +1132,9 @@ export class LaceRenderer {
       const { lineWidth } = geometry
       context.save()
       context.globalAlpha = this.writing * this.fray
-      context.fillStyle = 'rgba(255, 255, 255, 0.07)'
+      context.fillStyle = 'rgba(255, 255, 255, 0.05)'
+      context.fill(this.frayed.halo)
+      context.fillStyle = 'rgba(255, 255, 255, 0.08)'
       context.fill(this.frayed.fuzz)
       context.lineCap = 'round'
       context.strokeStyle = 'rgba(0, 0, 0, 0.45)'

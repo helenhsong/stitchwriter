@@ -429,8 +429,50 @@ function App() {
     return insideBorder ? caretIndexAt(layout, geometry, col, row) : null
   }
 
+  // A right click slips the hidden input under the pointer, so the
+  // browser's own menu (Cut, Copy, Paste, Select All) acts on the writing.
+  // It goes back out of the way once the pointer moves on after the menu.
+  const menuRef = useRef('')
+  const openMenu = (event) => {
+    const input = inputRef.current
+    if (!input) return
+    const index = hitTest(event.clientX, event.clientY)
+    const inside = selection && index !== null && index >= selection.start && index <= selection.end
+    if (index !== null && !inside) {
+      const offset = offsetOf(index)
+      input.setSelectionRange(offset, offset)
+      syncCaret(input)
+    }
+    input.style.left = `${event.clientX}px`
+    input.style.top = `${event.clientY}px`
+    input.classList.add('lace-input-menu')
+    input.focus({ preventScroll: true })
+    menuRef.current = 'open'
+  }
+  const closeMenu = () => {
+    const input = inputRef.current
+    if (!input || !menuRef.current) return
+    input.classList.remove('lace-input-menu')
+    input.style.left = ''
+    input.style.top = ''
+    menuRef.current = ''
+  }
+  useEffect(() => {
+    const onMove = () => { if (menuRef.current === 'shown') closeMenu() }
+    window.addEventListener('pointermove', onMove, true)
+    window.addEventListener('keydown', closeMenu, true)
+    return () => {
+      window.removeEventListener('pointermove', onMove, true)
+      window.removeEventListener('keydown', closeMenu, true)
+    }
+  })
+
   // Dragging across the writing with a mouse selects it.
   const onPointerDown = (event) => {
+    if (event.pointerType === 'mouse' && event.button === 2) {
+      openMenu(event)
+      return
+    }
     if (event.pointerType !== 'mouse' || event.button !== 0) return
     const index = hitTest(event.clientX, event.clientY)
     if (index === null) return
@@ -442,7 +484,7 @@ function App() {
     const input = inputRef.current
     const drag = dragRef.current
     dragRef.current = null
-    if (!input) return
+    if (!input || event.button !== 0) return
     input.focus({ preventScroll: true })
     if (drag?.moved) return
     const index = hitTest(event.clientX, event.clientY)
@@ -474,6 +516,7 @@ function App() {
         className="lace-unstitch ph-label w-fit cursor-pointer text-xs leading-[150%] font-['iAWriterMonoV-Regular','iA_Writer_Mono_V',system-ui,sans-serif] transition-colors focus:outline-none focus-visible:outline-none"
         onMouseDown={(event) => event.preventDefault()}
         onClick={unstitchAll}
+        disabled={!text}
       >
         Unstitch all
       </button>
@@ -506,6 +549,15 @@ function App() {
           syncCaret(event.target)
         }}
         onSelect={(event) => syncCaret(event.currentTarget)}
+        onContextMenu={() => { if (menuRef.current) menuRef.current = 'shown' }}
+        // Once the menu is done, a click here belongs to the lace below.
+        onMouseDown={(event) => { if (menuRef.current) event.preventDefault() }}
+        onPointerDown={(event) => {
+          if (!menuRef.current) return
+          closeMenu()
+          onPointerDown(event)
+        }}
+        onPointerUp={onPointerUp}
         aria-label="Text to stitch"
         autoCapitalize="sentences"
         autoFocus
