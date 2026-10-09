@@ -27,10 +27,17 @@ export async function loadKitFace() {
   document.head.append(link)
   if (!(await loaded)) return null
   const faces = [...document.fonts].filter((face) => !before.has(face.family))
-  const face = faces.find((item) => item.style === 'normal' && /^(400|normal)$/.test(item.weight)) ?? faces[0]
+  // The lightest upright weight the kit offers (a variable face's weight
+  // is a range; its low end is used).
+  const weightOf = (item) => (item.weight === 'normal' ? 400 : item.weight === 'bold' ? 700 : parseFloat(item.weight))
+  const upright = faces.filter((item) => item.style === 'normal')
+  const face = (upright.length ? upright : faces).reduce(
+    (lightest, item) => (!lightest || weightOf(item) < weightOf(lightest) ? item : lightest),
+    null,
+  )
   if (!face) return null
   const family = `"${face.family.replace(/^["']|["']$/g, '')}"`
-  const style = `${face.style === 'normal' ? '' : `${face.style} `}${face.weight === 'normal' ? 400 : face.weight}`
+  const style = `${face.style === 'normal' ? '' : `${face.style} `}${weightOf(face)}`
   try {
     const ready = await document.fonts.load(`${style} 72px ${family}`)
     return ready.length ? { family, style } : null
