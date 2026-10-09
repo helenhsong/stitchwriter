@@ -345,6 +345,26 @@ function App() {
     input?.focus({ preventScroll: true })
   }
 
+  // Copy the writing as plain text, and say so for a moment.
+  const [copied, setCopied] = useState(false)
+  const copyTimerRef = useRef(0)
+  useEffect(() => () => window.clearTimeout(copyTimerRef.current), [])
+  const copyText = async () => {
+    const input = inputRef.current
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      // Older browsers: copy from the hidden input itself.
+      input?.select()
+      document.execCommand('copy')
+      input?.setSelectionRange(input.value.length, input.value.length)
+    }
+    input?.focus({ preventScroll: true })
+    setCopied(true)
+    window.clearTimeout(copyTimerRef.current)
+    copyTimerRef.current = window.setTimeout(() => setCopied(false), 1600)
+  }
+
   const syncCaret = (input) => {
     const offset = input.selectionDirection === 'backward'
       ? input.selectionStart
@@ -394,6 +414,16 @@ function App() {
         onClick={unstitchAll}
       >
         Unstitch all
+      </button>
+      <button
+        type="button"
+        className="lace-copy ph-label w-fit cursor-pointer text-xs leading-[150%] font-['iAWriterMonoV-Regular','iA_Writer_Mono_V',system-ui,sans-serif] transition-colors focus:outline-none focus-visible:outline-none"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={copyText}
+        disabled={!text}
+        aria-live="polite"
+      >
+        {copied ? 'Copied' : 'Copy text'}
       </button>
       <main
         ref={mainRef}
