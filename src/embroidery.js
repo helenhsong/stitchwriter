@@ -795,7 +795,7 @@ function raise(layer, ratio) {
 // rows of plied thread rather than flat blocks: fine slanted strands, each
 // a little shadow beside a little sheen, shifted with the band so the
 // twist stays put on the page.
-function twist(layer, ratio, cell, rowOffset) {
+function twist(layer, ratio, cell, rowOffset, origin = null) {
   const { context } = layer
   const period = Math.max(3, Math.round(cell * 0.9 * ratio))
   const tile = document.createElement('canvas')
@@ -816,7 +816,10 @@ function twist(layer, ratio, cell, rowOffset) {
     ply.stroke()
   }
   const pattern = context.createPattern(tile, 'repeat')
-  pattern.setTransform(new DOMMatrix().translate(0, -((rowOffset * cell * ratio) % period)))
+  // `origin` is where the layer's top left sits on the page, in device
+  // pixels, when it is not the full-width band.
+  const [left, top] = origin ?? [0, rowOffset * cell * ratio]
+  pattern.setTransform(new DOMMatrix().translate(-(left % period), -(top % period)))
   context.save()
   context.setTransform(1, 0, 0, 1, 0, 0)
   context.globalCompositeOperation = 'source-atop'
@@ -1264,6 +1267,34 @@ export class LaceRenderer {
     raise(this.textLayer, this.ratio)
   }
 
+  // Draw the stitches being worked, finished like the settled writing.
+  drawWorking(working, scrollY) {
+    const { geometry, ratio, context } = this
+    const { cell, lineWidth } = geometry
+    const margin = 3
+    const xs = working.map(([gx]) => gx)
+    const ys = working.map(([, gy]) => gy)
+    const left = Math.floor((Math.min(...xs) - margin) * cell * ratio)
+    const top = Math.floor((Math.min(...ys) - margin) * cell * ratio)
+    const right = Math.ceil((Math.max(...xs) + margin + 1) * cell * ratio)
+    const bottom = Math.ceil((Math.max(...ys) + margin + 1) * cell * ratio)
+    const layer = makeCanvas((right - left) / ratio, (bottom - top) / ratio, ratio)
+    layer.context.translate(-left / ratio, -top / ratio)
+    const stitches = new Set()
+    for (const [gx, gy, progress] of working) {
+      this.drawBlock(layer.context, gx, gy, progress)
+      stitches.add(`${gx},${gy}`)
+    }
+    twist(layer, ratio, cell, 0, [left, top])
+    fray(layer.context, stitches, cell, lineWidth, 0)
+    soften(layer, ratio * 0.3)
+    raise(layer, ratio)
+    context.save()
+    context.setTransform(1, 0, 0, 1, 0, 0)
+    context.drawImage(layer.canvas, left, top - Math.round(scrollY * ratio))
+    context.restore()
+  }
+
   // Draw a deleted letter `pulled` of the way out. Pulling the loose end
   // undoes the last stitch worked first, so the run of stitches slides
   // back along its path toward the first one and out through that hole:
@@ -1362,6 +1393,10 @@ export class LaceRenderer {
     // Everything below is drawn in document coordinates.
     context.setTransform(ratio, 0, 0, ratio, 0, -scrollY * ratio)
 
+    // Letters being worked are finished the same way as the settled
+    // writing (twist, fibres, softening and shadow) on a small layer of
+    // their own, so nothing changes when they settle into the writing.
+    const inWork = []
     for (const item of layout.characters) {
       if (!animating.has(item.index)) continue
       const birth = births[item.index]
@@ -1373,9 +1408,10 @@ export class LaceRenderer {
         const progress = clamp((now - start) / CELL_FILL_MS, 0, 1)
         if (progress <= 0) return
         const { gx, gy } = this.toGrid(item.col + dx, baseRow + dy)
-        if (gy >= firstRow && gy <= lastRow) this.drawBlock(context, gx, gy, progress)
+        if (gy >= firstRow && gy <= lastRow) inWork.push([gx, gy, progress])
       })
     }
+    if (inWork.length) this.drawWorking(inWork, scrollY)
 
     // Selected letters fray, easing in and out.
     const selection = scene.selection
