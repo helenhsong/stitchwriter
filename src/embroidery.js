@@ -28,7 +28,7 @@ const BLOCK_VARIANTS = 6
 const MESH_PERIOD = 16
 // The mesh is worked at one fixed gauge: each open hole is this many CSS
 // pixels across.
-const MESH_CELL = 2.5
+const MESH_CELL = 2.25
 // Letters are charted at this em; a larger em works each charted stitch
 // as a square of cells.
 const CHART_EM = 10
@@ -66,7 +66,7 @@ export function createGeometry(viewportWidth, viewportHeight) {
   const inner = {
     left: centre - Math.floor(across / 2),
     right: centre - Math.floor(across / 2) + across - 1,
-    top: Math.round((compact ? 204 : 216) / cell),
+    top: Math.round((compact ? 180 : 188) / cell),
     bottom: Math.floor(viewportHeight / cell) - 1 - Math.round((compact ? 30 : 64) / cell),
   }
   // The writing area doubles as the piece's extent, which grows with it.
@@ -830,6 +830,42 @@ function drawFray(context, points, width, amount) {
   context.restore()
 }
 
+// Selected letters look worn loose: stray fibres curl out from the edges of
+// their stitches, with a faint halo of fuzz. Built once per selection.
+function frayPaths(layout, selection, geometry, toGrid) {
+  const { cell, baselineOffset, lineHeight } = geometry
+  const hairs = new Path2D()
+  const fuzz = new Path2D()
+  const sides = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+  for (const item of layout.characters) {
+    if (!item.glyph || item.index < selection.start || item.index >= selection.end) continue
+    const baseRow = baselineOffset + item.line * lineHeight
+    const cells = item.glyph.cells.map(([dx, dy]) => toGrid(item.col + dx, baseRow + dy))
+    const filled = new Set(cells.map(({ gx, gy }) => `${gx},${gy}`))
+    for (const { gx, gy } of cells) {
+      fuzz.rect(gx * cell - cell * 0.35, gy * cell - cell * 0.35, cell * 1.7, cell * 1.7)
+      sides.forEach(([sx, sy], side) => {
+        if (filled.has(`${gx + sx},${gy + sy}`)) return
+        if (hash(gx * 3.1 + side, gy * 1.7 - side) > 0.42) return
+        const along = hash(gx + side * 5.3, gy * 2.9)
+        const x = (gx + 0.5 + sx * 0.5 + (sy ? along - 0.5 : 0)) * cell
+        const y = (gy + 0.5 + sy * 0.5 + (sx ? along - 0.5 : 0)) * cell
+        const angle = Math.atan2(sy, sx) + (hash(gy * 7.7, gx + side) - 0.5) * 1.3
+        const length = cell * (0.9 + hash(gx * 1.3, gy * 5.1 + side) * 2.2)
+        const bend = (hash(side * 9.1 + gx, gy) - 0.5) * 1.8
+        hairs.moveTo(x, y)
+        hairs.quadraticCurveTo(
+          x + Math.cos(angle + bend) * length * 0.55,
+          y + Math.sin(angle + bend) * length * 0.55,
+          x + Math.cos(angle) * length,
+          y + Math.sin(angle) * length,
+        )
+      })
+    }
+  }
+  return { hairs, fuzz }
+}
+
 export class LaceRenderer {
   constructor(canvas) {
     this.canvas = canvas
@@ -1019,8 +1055,9 @@ export class LaceRenderer {
       }
     }
 
+    const layoutKey = layout.characters.map((item) => `${item.col},${item.line}`).join(';')
     const textKey = [
-      layout.characters.map((item) => `${item.col},${item.line}`).join(';'),
+      layoutKey,
       this.bandStart,
       placeholder,
       scene.pieceGeometry.frame.bottom,
@@ -1034,8 +1071,20 @@ export class LaceRenderer {
     const meshOffset = Math.round((scrollY % (MESH_PERIOD * cell)) * ratio)
     const textOffset = Math.round((scrollY - this.bandStart * cell) * ratio)
     context.setTransform(1, 0, 0, 1, 0, 0)
+    context.globalAlpha = 1
     context.drawImage(this.velvetLayer.canvas, 0, 0)
     context.drawImage(this.meshLayer.canvas, 0, -meshOffset)
+
+    // Under README the lace stays, but the stitching and thread fade away
+    // so README reads clearly over plain lace, and fade back after.
+    const sinceFade = this.lastFade ? Math.min(64, now - this.lastFade) : 16
+    this.lastFade = now
+    const shown = scene.hideWriting ? 0 : 1
+    this.writing = reducedMotion || this.writing === undefined
+      ? shown
+      : this.writing + (shown - this.writing) * (1 - Math.exp(-sinceFade / 110))
+    if (this.writing < 0.005) return
+    context.globalAlpha = this.writing
     context.drawImage(this.textLayer.canvas, 0, -textOffset)
     // Everything below is drawn in document coordinates.
     context.setTransform(ratio, 0, 0, ratio, 0, -scrollY * ratio)
@@ -1053,6 +1102,35 @@ export class LaceRenderer {
         const { gx, gy } = this.toGrid(item.col + dx, baseRow + dy)
         if (gy >= firstRow && gy <= lastRow) this.drawBlock(context, gx, gy, progress)
       })
+    }
+
+    // Selected letters fray, easing in and out.
+    const selection = scene.selection
+    const frayKey = selection ? `${selection.start}:${selection.end}:${cell}:${layoutKey}` : ''
+    if (frayKey && frayKey !== this.frayKey) {
+      this.frayed = frayPaths(layout, selection, geometry, (col, row) => this.toGrid(col, row))
+      this.frayKey = frayKey
+    }
+    const frayTarget = frayKey ? 1 : 0
+    this.fray = reducedMotion
+      ? frayTarget
+      : (this.fray ?? 0) + (frayTarget - (this.fray ?? 0)) * (1 - Math.exp(-sinceFade / 90))
+    if (this.frayed && this.fray > 0.01) {
+      const { lineWidth } = geometry
+      context.save()
+      context.globalAlpha = this.writing * this.fray
+      context.fillStyle = 'rgba(255, 255, 255, 0.07)'
+      context.fill(this.frayed.fuzz)
+      context.lineCap = 'round'
+      context.strokeStyle = 'rgba(0, 0, 0, 0.45)'
+      context.lineWidth = lineWidth * 0.9
+      context.translate(0.4, 0.6)
+      context.stroke(this.frayed.hairs)
+      context.translate(-0.4, -0.6)
+      context.strokeStyle = 'rgba(236, 236, 232, 0.85)'
+      context.lineWidth = lineWidth * 0.55
+      context.stroke(this.frayed.hairs)
+      context.restore()
     }
 
     // A deleted letter is pulled out like a single thread: the run of

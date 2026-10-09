@@ -109,6 +109,8 @@ function codePointLength(value) {
 function App() {
   const [text, setText] = useState('')
   const [caret, setCaret] = useState(0)
+  const [selection, setSelection] = useState(null)
+  const dragRef = useRef(null)
   const canvasRef = useRef(null)
   const mainRef = useRef(null)
   const rendererRef = useRef(null)
@@ -268,10 +270,11 @@ function App() {
           placeholder,
           caret: caretCell,
           caretIndex: caret,
+          selection,
           reducedMotion,
         }
       : null
-  }, [caret, caretCell, layout, maxScroll, pieceGeometry, placeholder, reducedMotion])
+  }, [caret, caretCell, layout, maxScroll, pieceGeometry, placeholder, reducedMotion, selection])
 
   useEffect(() => {
     if (!fontReady || !canvasRef.current) return undefined
@@ -295,6 +298,8 @@ function App() {
         // Read the scroll position every frame so the lace moves with the
         // page smoothly instead of in steps. Scrolling README leaves it be.
         scene.scrollY = readmeOpen ? (scene.scrollY ?? 0) : (mainRef.current?.scrollTop ?? 0)
+        scene.hideWriting =
+          document.querySelector('.ph-project-header a[aria-expanded]')?.getAttribute('aria-expanded') === 'true'
         renderer.draw(scene, now)
       }
       if (!reducedMotion) frame = requestAnimationFrame(paint)
@@ -313,7 +318,7 @@ function App() {
       cancelAnimationFrame(frame)
       scroller?.removeEventListener('scroll', onScroll)
     }
-  }, [caret, fontReady, geometry, readmeOpen, reducedMotion, text])
+  }, [caret, fontReady, geometry, readmeOpen, reducedMotion, selection, text])
 
   // Ready to type as soon as the page opens, and any key typed while focus
   // is elsewhere on the page goes to the lace.
@@ -367,6 +372,7 @@ function App() {
     const input = inputRef.current
     setText('')
     setCaret(0)
+    setSelection(null)
     input?.focus({ preventScroll: true })
   }
 
@@ -395,7 +401,19 @@ function App() {
       ? input.selectionStart
       : input.selectionEnd
     setCaret(codePointLength(input.value.slice(0, offset)))
+    const start = codePointLength(input.value.slice(0, input.selectionStart))
+    const end = codePointLength(input.value.slice(0, input.selectionEnd))
+    setSelection((current) =>
+      start < end
+        ? current?.start === start && current?.end === end
+          ? current
+          : { start, end }
+        : null,
+    )
   }
+
+  // The input's offset for an insertion point counted in characters.
+  const offsetOf = (index) => Array.from(text).slice(0, index).join('').length
 
   // Map a pointer position to an insertion point in the writing, if any.
   const hitTest = (clientX, clientY) => {
@@ -411,21 +429,40 @@ function App() {
     return insideBorder ? caretIndexAt(layout, geometry, col, row) : null
   }
 
+  // Dragging across the writing with a mouse selects it.
+  const onPointerDown = (event) => {
+    if (event.pointerType !== 'mouse' || event.button !== 0) return
+    const index = hitTest(event.clientX, event.clientY)
+    if (index === null) return
+    dragRef.current = { anchor: index, moved: false }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+
   const onPointerUp = (event) => {
     const input = inputRef.current
+    const drag = dragRef.current
+    dragRef.current = null
     if (!input) return
-    const index = hitTest(event.clientX, event.clientY)
     input.focus({ preventScroll: true })
+    if (drag?.moved) return
+    const index = hitTest(event.clientX, event.clientY)
     if (index === null) return
-    const offset = Array.from(text).slice(0, index).join('').length
+    const offset = offsetOf(index)
     input.setSelectionRange(offset, offset)
-    setCaret(index)
+    syncCaret(input)
   }
 
   const onPointerMove = (event) => {
     if (!mainRef.current) return
-    const overText = hitTest(event.clientX, event.clientY) !== null
-    mainRef.current.style.cursor = overText ? 'text' : 'default'
+    const index = hitTest(event.clientX, event.clientY)
+    const drag = dragRef.current
+    mainRef.current.style.cursor = index !== null || drag ? 'text' : 'default'
+    const input = inputRef.current
+    if (!drag || !input || index === null || (!drag.moved && index === drag.anchor)) return
+    drag.moved = true
+    const [from, to] = index < drag.anchor ? [index, drag.anchor] : [drag.anchor, index]
+    input.setSelectionRange(offsetOf(from), offsetOf(to), index < drag.anchor ? 'backward' : 'forward')
+    syncCaret(input)
   }
 
   return (
@@ -485,6 +522,7 @@ function App() {
         // Keep focus in the hidden input; clicks only move the insertion
         // point when they land on the writing.
         onMouseDown={(event) => event.preventDefault()}
+        onPointerDown={onPointerDown}
         onPointerUp={onPointerUp}
         onPointerMove={onPointerMove}
       >

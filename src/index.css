@@ -9,14 +9,9 @@ html:root {
   /* The header's links, in white. */
   --project-muted-fg: #ffffff;
   --project-hover-fg: #ffffff;
-  /* Let the lace show through the fixed header; the README view below puts
-     the solid page colour back. */
+  /* Let the lace show through the fixed header, on README too. */
   --background: transparent;
   background: var(--project-bg);
-}
-
-html:root[data-ph-open] {
-  --background: var(--project-bg);
 }
 
 body {
@@ -48,21 +43,26 @@ body {
   display: block;
 }
 
-/* While README is open the lace stays put under the header's veil, so it
-   fades out and back in with it, but takes no clicks or scrolling. */
+/* While README is open the page takes no clicks or scrolling. */
 html[data-ph-open] .lace-page {
   pointer-events: none;
 }
 
-/* From the moment README is opened the lace and the corner links fade out
-   under its veil, and when it closes they fade gently back in. */
-.lace-canvas,
+/* While README is open the lace stays in view, drawn over the header's
+   veil and under README itself; the stitching fades away on the canvas.
+   The corner links fade out from the moment README is opened, and back
+   in when it closes. */
+html[data-ph-open] .lace-canvas {
+  z-index: 4;
+  pointer-events: none;
+}
+
 .lace-copy,
 .lace-unstitch {
   transition: opacity 0.5s ease-in-out;
 }
 
-html:has(.ph-project-header a[aria-expanded='true']) :is(.lace-canvas, .lace-copy, .lace-unstitch) {
+html:has(.ph-project-header a[aria-expanded='true']) :is(.lace-copy, .lace-unstitch) {
   opacity: 0;
   pointer-events: none;
   transition-duration: 0.24s;
