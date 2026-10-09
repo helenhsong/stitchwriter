@@ -15,6 +15,7 @@ import {
   LaceRenderer,
   STITCH_FONT,
   STITCH_FONT_STYLE,
+  loadKitFace,
   caretIndexAt,
   caretPosition,
   createGeometry,
@@ -62,19 +63,24 @@ function useViewport() {
   return size
 }
 
-// Ready once the fallback face has loaded (or given up).
-function useFontReady() {
-  const [ready, setReady] = useState(false)
+// Ready once the fallback face, the header's fonts and Helen's font kit have
+// loaded (or given up); returns the kit's typeface for the writing, or null
+// without it.
+function useStitchFace() {
+  const [state, setState] = useState({ ready: false, face: null })
 
   useEffect(() => {
     let active = true
-    const timeout = new Promise((resolve) => window.setTimeout(resolve, 1800))
+    const timeout = (ms, value) => new Promise((resolve) => window.setTimeout(() => resolve(value), ms))
     const fallback = document.fonts
-      ? document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`)
+      ? Promise.all([document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`), document.fonts.ready])
       : Promise.resolve()
 
-    Promise.race([fallback, timeout]).then(() => {
-      if (active) setReady(true)
+    Promise.all([
+      Promise.race([fallback, timeout(1800)]),
+      Promise.race([loadKitFace().catch(() => null), timeout(2500, null)]),
+    ]).then(([, face]) => {
+      if (active) setState({ ready: true, face })
     })
 
     return () => {
@@ -82,7 +88,7 @@ function useFontReady() {
     }
   }, [])
 
-  return ready
+  return state
 }
 
 // ProjectHeader marks <html data-ph-open> while its README panel is showing.
@@ -134,7 +140,7 @@ function App() {
   }, [])
   const holdTimerRef = useRef(0)
   const sceneRef = useRef(null)
-  const fontReady = useFontReady()
+  const { ready: fontReady, face: stitchFace } = useStitchFace()
   const reducedMotion = useReducedMotion()
   const viewport = useViewport()
   const readmeOpen = useReadmeOpen()
@@ -145,8 +151,8 @@ function App() {
   )
   const placeholder = !text
   const layout = useMemo(
-    () => (fontReady ? layoutText(text, geometry) : null),
-    [fontReady, geometry, text],
+    () => (fontReady ? layoutText(text, geometry, stitchFace) : null),
+    [fontReady, geometry, stitchFace, text],
   )
   // The piece is sized to its writing: it starts one line tall and grows
   // a row at a time as the writing gets longer.
@@ -331,6 +337,9 @@ function App() {
         scene.hideWriting =
           document.querySelector('.ph-project-header a[aria-expanded]')?.getAttribute('aria-expanded') === 'true'
         renderer.draw(scene, now)
+        // The page fades in as one piece once the lace has a first frame,
+        // instead of the header and the lace popping in one after another.
+        document.documentElement.dataset.laceReady = ''
       }
       if (!reducedMotion) frame = requestAnimationFrame(paint)
     }

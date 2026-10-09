@@ -20,6 +20,23 @@ body {
   background: var(--project-bg);
 }
 
+/* Until the lace's first frame is painted the page is plain velvet; then
+   the header, buttons and lace fade in together. */
+#root {
+  opacity: 0;
+  transition: opacity 0.7s ease;
+}
+
+html[data-lace-ready] #root {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #root {
+    transition: none;
+  }
+}
+
 /* The page's own scrolling surface: a transparent layer over the whole
    window, so its thin scrollbar floats over the lace on a clear track. */
 .lace-page {
