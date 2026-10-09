@@ -19,6 +19,7 @@ import {
   caretPosition,
   createGeometry,
   layoutText,
+  loadKitFace,
   stitchDuration,
 } from './embroidery.js'
 
@@ -62,18 +63,23 @@ function useViewport() {
   return size
 }
 
-function useFontReady() {
-  const [ready, setReady] = useState(false)
+// Ready once the fallback face and Helen's font kit have loaded (or given
+// up); returns the kit's typeface for the writing, or null without it.
+function useStitchFace() {
+  const [state, setState] = useState({ ready: false, face: null })
 
   useEffect(() => {
     let active = true
-    const timeout = new Promise((resolve) => window.setTimeout(resolve, 1800))
-    const fontLoad = document.fonts
+    const timeout = (ms, value) => new Promise((resolve) => window.setTimeout(() => resolve(value), ms))
+    const fallback = document.fonts
       ? document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`)
       : Promise.resolve()
 
-    Promise.race([fontLoad, timeout]).then(() => {
-      if (active) setReady(true)
+    Promise.all([
+      Promise.race([fallback, timeout(1800)]),
+      Promise.race([loadKitFace().catch(() => null), timeout(2500, null)]),
+    ]).then(([, face]) => {
+      if (active) setState({ ready: true, face })
     })
 
     return () => {
@@ -81,7 +87,7 @@ function useFontReady() {
     }
   }, [])
 
-  return ready
+  return state
 }
 
 // ProjectHeader marks <html data-ph-open> while its README panel is showing.
@@ -124,7 +130,7 @@ function App() {
   // so the border only draws in as the stitches come out.
   const [ghostRows, setGhostRows] = useState(0)
   const sceneRef = useRef(null)
-  const fontReady = useFontReady()
+  const { ready: fontReady, face: stitchFace } = useStitchFace()
   const reducedMotion = useReducedMotion()
   const viewport = useViewport()
   const readmeOpen = useReadmeOpen()
@@ -135,8 +141,8 @@ function App() {
   )
   const placeholder = !text
   const layout = useMemo(
-    () => (fontReady ? layoutText(text, geometry) : null),
-    [fontReady, geometry, text],
+    () => (fontReady ? layoutText(text, geometry, stitchFace) : null),
+    [fontReady, geometry, stitchFace, text],
   )
   // The piece is sized to its writing: it starts one line tall and grows
   // a row at a time as the writing gets longer.
@@ -429,8 +435,50 @@ function App() {
     return insideBorder ? caretIndexAt(layout, geometry, col, row) : null
   }
 
+  // A right click slips the hidden input under the pointer, so the
+  // browser's own menu (Cut, Copy, Paste, Select All) acts on the writing.
+  // It goes back out of the way once the pointer moves on after the menu.
+  const menuRef = useRef('')
+  const openMenu = (event) => {
+    const input = inputRef.current
+    if (!input) return
+    const index = hitTest(event.clientX, event.clientY)
+    const inside = selection && index !== null && index >= selection.start && index <= selection.end
+    if (index !== null && !inside) {
+      const offset = offsetOf(index)
+      input.setSelectionRange(offset, offset)
+      syncCaret(input)
+    }
+    input.style.left = `${event.clientX}px`
+    input.style.top = `${event.clientY}px`
+    input.classList.add('lace-input-menu')
+    input.focus({ preventScroll: true })
+    menuRef.current = 'open'
+  }
+  const closeMenu = () => {
+    const input = inputRef.current
+    if (!input || !menuRef.current) return
+    input.classList.remove('lace-input-menu')
+    input.style.left = ''
+    input.style.top = ''
+    menuRef.current = ''
+  }
+  useEffect(() => {
+    const onMove = () => { if (menuRef.current === 'shown') closeMenu() }
+    window.addEventListener('pointermove', onMove, true)
+    window.addEventListener('keydown', closeMenu, true)
+    return () => {
+      window.removeEventListener('pointermove', onMove, true)
+      window.removeEventListener('keydown', closeMenu, true)
+    }
+  })
+
   // Dragging across the writing with a mouse selects it.
   const onPointerDown = (event) => {
+    if (event.pointerType === 'mouse' && event.button === 2) {
+      openMenu(event)
+      return
+    }
     if (event.pointerType !== 'mouse' || event.button !== 0) return
     const index = hitTest(event.clientX, event.clientY)
     if (index === null) return
@@ -442,7 +490,7 @@ function App() {
     const input = inputRef.current
     const drag = dragRef.current
     dragRef.current = null
-    if (!input) return
+    if (!input || event.button !== 0) return
     input.focus({ preventScroll: true })
     if (drag?.moved) return
     const index = hitTest(event.clientX, event.clientY)
@@ -474,6 +522,7 @@ function App() {
         className="lace-unstitch ph-label w-fit cursor-pointer text-xs leading-[150%] font-['iAWriterMonoV-Regular','iA_Writer_Mono_V',system-ui,sans-serif] transition-colors focus:outline-none focus-visible:outline-none"
         onMouseDown={(event) => event.preventDefault()}
         onClick={unstitchAll}
+        disabled={!text}
       >
         Unstitch all
       </button>
@@ -506,6 +555,15 @@ function App() {
           syncCaret(event.target)
         }}
         onSelect={(event) => syncCaret(event.currentTarget)}
+        onContextMenu={() => { if (menuRef.current) menuRef.current = 'shown' }}
+        // Once the menu is done, a click here belongs to the lace below.
+        onMouseDown={(event) => { if (menuRef.current) event.preventDefault() }}
+        onPointerDown={(event) => {
+          if (!menuRef.current) return
+          closeMenu()
+          onPointerDown(event)
+        }}
+        onPointerUp={onPointerUp}
         aria-label="Text to stitch"
         autoCapitalize="sentences"
         autoFocus

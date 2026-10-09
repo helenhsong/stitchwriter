@@ -81,6 +81,15 @@ html:has(.ph-project-header a[aria-expanded='true']) :is(.lace-copy, .lace-unsti
   resize: none;
 }
 
+/* Under the pointer for a right click; see openMenu in App.jsx. */
+.lace-input.lace-input-menu {
+  z-index: 12;
+  width: 24px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+  cursor: text;
+}
+
 /* Copy text and Unstitch all sit in the bottom corners, in the header's
    own type. */
 .lace-copy,
@@ -101,7 +110,8 @@ html:has(.ph-project-header a[aria-expanded='true']) :is(.lace-copy, .lace-unsti
   right: 32px;
 }
 
-.lace-copy:disabled {
+.lace-copy:disabled,
+.lace-unstitch:disabled {
   opacity: 0.45;
   cursor: default;
 }
