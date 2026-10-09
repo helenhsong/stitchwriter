@@ -1,9 +1,3 @@
-@font-face {
-  font-family: 'Amstir Pixel';
-  src: url('./assets/fonts/AmstirPixel-Regular.otf') format('opentype');
-  font-display: block;
-}
-
 html {
   scrollbar-width: thin;
   scrollbar-color: gray transparent;
