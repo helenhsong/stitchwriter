@@ -66,14 +66,7 @@ export function createGeometry(viewportWidth, viewportHeight) {
   return {
     cell,
     em,
-    seal: {
-      centre,
-      top: sealTop,
-      bottom: sealBottom,
-      // Where the header buttons line up with the seal's lettering, on
-      // screens wide enough to share a row with it.
-      middle: compact ? null : (sealTop + 11) * cell,
-    },
+    seal: { centre, top: sealTop, bottom: sealBottom },
     cols,
     rows,
     frame,
@@ -614,95 +607,6 @@ function soften(layer, amount) {
   context.restore()
 }
 
-// The header's link labels are embroidered over the lace in white satin
-// stitch, in the same face and size as the (invisible) links underneath,
-// so each label sits exactly where its link can be clicked.
-export const LABEL_FONT = '"Geist Pixel", ui-monospace, monospace'
-
-function embroiderLabels(context) {
-  for (const link of document.querySelectorAll('.ph-project-header a, .lace-unstitch')) {
-    const bounds = link.getBoundingClientRect()
-    const style = getComputedStyle(link)
-    embroiderText(context, link.textContent.trim(), {
-      font: `${style.fontWeight} ${style.fontSize} ${LABEL_FONT}`,
-      x: bounds.left + parseFloat(style.paddingLeft),
-      y: (bounds.top + bounds.bottom) / 2,
-      width: bounds.width,
-      height: bounds.height,
-    })
-  }
-}
-
-// Fill the lettering with short slanted satin stitches laid side by side,
-// each catching a little light along its length, with the slight shadow a
-// raised thread casts on the cloth: embroidered, not printed.
-function embroiderText(context, text, { font, x, y, width, height }) {
-  const scale = 4
-  const margin = 4
-  const box = { left: x - margin, top: y - height / 2 - margin, width: width + margin * 2, height: height + margin * 2 }
-  const guide = document.createElement('canvas')
-  guide.width = Math.ceil(box.width * scale)
-  guide.height = Math.ceil(box.height * scale)
-  const ink = guide.getContext('2d', { willReadFrequently: true })
-  ink.scale(scale, scale)
-  ink.font = font
-  ink.textBaseline = 'middle'
-  ink.fillStyle = '#000'
-  ink.fillText(text, x - box.left, y - box.top)
-  // Satin stitch sits a little proud of the letter's outline.
-  ink.strokeStyle = '#000'
-  ink.lineWidth = 0.6
-  ink.strokeText(text, x - box.left, y - box.top)
-  const pixels = ink.getImageData(0, 0, guide.width, guide.height).data
-  const covered = (px, py) => {
-    const gx = Math.round((px - box.left) * scale)
-    const gy = Math.round((py - box.top) * scale)
-    if (gx < 0 || gy < 0 || gx >= guide.width || gy >= guide.height) return false
-    return pixels[(gy * guide.width + gx) * 4 + 3] > 120
-  }
-
-  const pitch = 0.7
-  const stitches = new Path2D()
-  const glints = new Path2D()
-  for (let py = box.top; py < box.top + box.height; py += pitch) {
-    for (let px = box.left; px < box.left + box.width; px += pitch) {
-      if (!covered(px, py)) continue
-      const jitter = (hash(px * 7, py * 3) - 0.5) * 0.18
-      stitches.moveTo(px - pitch * 0.6, py + pitch * 0.5 + jitter)
-      stitches.lineTo(px + pitch * 0.6, py - pitch * 0.5 + jitter)
-      if (hash(px * 3, py * 5) > 0.55) {
-        glints.moveTo(px - pitch * 0.25, py + pitch * 0.1 + jitter)
-        glints.lineTo(px + pitch * 0.3, py - pitch * 0.35 + jitter)
-      }
-    }
-  }
-  context.save()
-  // The thick thread dims the mesh softly around the letters, the way dense
-  // embroidery pulls the cloth: a diffuse shade with no hard edge.
-  context.filter = 'blur(3px)'
-  context.font = font
-  context.textBaseline = 'middle'
-  context.lineJoin = 'round'
-  context.strokeStyle = 'rgba(10, 10, 10, 0.75)'
-  context.lineWidth = 5
-  context.strokeText(text, x, y)
-  context.filter = 'none'
-  context.lineCap = 'round'
-  // The thread's own soft shadow on the cloth, just below and to the right.
-  context.translate(0.5, 0.7)
-  context.strokeStyle = 'rgba(0, 0, 0, 0.35)'
-  context.lineWidth = pitch * 1.1
-  context.stroke(stitches)
-  context.translate(-0.5, -0.7)
-  context.strokeStyle = '#efeeea'
-  context.lineWidth = pitch * 1.05
-  context.stroke(stitches)
-  context.strokeStyle = 'rgba(255, 255, 255, 0.9)'
-  context.lineWidth = pitch * 0.35
-  context.stroke(glints)
-  context.restore()
-}
-
 // Sample a cubic Bézier into points.
 function bezierPoints(p0, p1, p2, p3, count) {
   const points = []
@@ -930,7 +834,6 @@ export class LaceRenderer {
     this.velvetLayer = makeCanvas(width, height, ratio)
     this.meshLayer = makeCanvas(width, height + (MESH_PERIOD + 1) * geometry.cell, ratio)
     this.textLayer = makeCanvas(width, this.layerRows * geometry.cell, ratio)
-    this.labelLayer = makeCanvas(width, height, ratio)
     this.bandStart = 0
     this.ornamentKey = ''
     this.paintBase()
@@ -970,9 +873,8 @@ export class LaceRenderer {
     }
   }
 
-  // The fixed layers: the velvet ground stays put behind the lace, the
-  // open mesh is one repeating strip that slides as the page scrolls, and
-  // the header labels stay embroidered at the top above everything else.
+  // The fixed layers: the velvet ground stays put behind the lace, and the
+  // open mesh is one repeating strip that slides as the page scrolls.
   paintBase() {
     const { geometry } = this
     paintVelvet(this.velvetLayer.context, this.width, this.height)
@@ -981,8 +883,6 @@ export class LaceRenderer {
       rows: geometry.rows + MESH_PERIOD + 1,
     })
     soften(this.meshLayer, this.ratio * 0.3)
-
-    embroiderLabels(this.labelLayer.context)
   }
 
   // Map a text cell to document grid coordinates.
@@ -1212,9 +1112,6 @@ export class LaceRenderer {
       swing: idleSway + this.anchor.velocity,
       lift: this.lift,
     })
-    context.setTransform(1, 0, 0, 1, 0, 0)
-    context.drawImage(this.labelLayer.canvas, 0, 0)
-    context.setTransform(this.ratio, 0, 0, this.ratio, 0, 0)
   }
 }
 

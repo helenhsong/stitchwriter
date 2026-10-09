@@ -6,7 +6,8 @@ html {
 html:root {
   --project-bg: #0a0a0a;
   --project-fg: #f3f3f1;
-  --project-muted-fg: #b9b9b5;
+  /* The header's links, in white. */
+  --project-muted-fg: #ffffff;
   --project-hover-fg: #ffffff;
   /* Let the lace show through the fixed header. */
   --background: transparent;
@@ -47,46 +48,20 @@ body {
   resize: none;
 }
 
-/* The header link and Unstitch all are embroidered over the lace on the
-   canvas, in this same face and size; their own text stays in place,
-   invisible, so it is still what gets clicked, focused and read aloud. On
-   wide screens they are lowered to sit level with the seal's words. */
-:root {
-  /* How far the header labels sit in from the sides of the page. */
-  --header-inset: 64px;
-}
-
-.ph-project-header {
-  padding-top: calc(var(--seal-middle, 36px) - 12px);
-  padding-right: var(--header-inset);
-  padding-left: var(--header-inset);
-}
-
-.ph-project-header a,
-.lace-unstitch {
-  color: transparent;
-  font: 18px / 24px 'Geist Pixel', ui-monospace, monospace;
-}
-
-/* Where the header's right-hand link used to sit. */
+/* Unstitch all takes the place of the header's right-hand link, in the
+   header's own type and spacing. */
 .lace-unstitch {
   position: fixed;
   z-index: 11;
-  top: calc(var(--seal-middle, 36px) - 12px);
-  right: var(--header-inset);
+  top: 24px;
+  right: 32px;
   padding: 0;
   border: 0;
   background: none;
-  cursor: pointer;
 }
 
-@media (max-width: 560px) {
-  :root {
-    --header-inset: 28px;
-  }
-
-  .ph-project-header a,
+@media (max-width: 420px) {
   .lace-unstitch {
-    font-size: 15px;
+    right: 20px;
   }
 }
