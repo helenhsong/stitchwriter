@@ -30,11 +30,12 @@ export async function loadKitFace() {
   // The kit's typeface for the writing is Argent Pixel CF.
   const argent = added.filter((face) => /argent/i.test(face.family))
   const faces = argent.length ? argent : added
-  // The lightest upright weight the kit offers (a variable face's weight
-  // is a range; its low end is used).
+  // The lightest italic weight the kit offers (a variable face's weight
+  // is a range; its low end is used), or the lightest of any if it has no
+  // italic.
   const weightOf = (item) => (item.weight === 'normal' ? 400 : item.weight === 'bold' ? 700 : parseFloat(item.weight))
-  const upright = faces.filter((item) => item.style === 'normal')
-  const face = (upright.length ? upright : faces).reduce(
+  const italic = faces.filter((item) => item.style !== 'normal')
+  const face = (italic.length ? italic : faces).reduce(
     (lightest, item) => (!lightest || weightOf(item) < weightOf(lightest) ? item : lightest),
     null,
   )
