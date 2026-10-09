@@ -6,45 +6,6 @@ import { CHARTED_SCRIPT, SPACE_ADVANCE } from './chartedScript.js'
 
 export const STITCH_FONT = '"Playfair Display", Georgia, serif'
 export const STITCH_FONT_STYLE = 'italic 400'
-// Helen's Adobe Fonts kit. The typed writing is stitched in its typeface;
-// if the kit can't load (offline, or a domain the kit doesn't allow), the
-// writing falls back to the charted script.
-const FONT_KIT = 'https://use.typekit.net/yso6mwu.css'
-
-const familiesLoaded = () => new Set([...document.fonts].map((face) => face.family))
-
-// Load the kit and return its typeface for stitching, or null.
-export async function loadKitFace() {
-  if (!document.fonts) return null
-  const before = familiesLoaded()
-  const link = document.createElement('link')
-  link.rel = 'stylesheet'
-  link.href = FONT_KIT
-  const loaded = new Promise((resolve) => {
-    link.onload = () => resolve(true)
-    link.onerror = () => resolve(false)
-  })
-  document.head.append(link)
-  if (!(await loaded)) return null
-  const faces = [...document.fonts].filter((face) => !before.has(face.family))
-  // The lightest upright weight the kit offers (a variable face's weight
-  // is a range; its low end is used).
-  const weightOf = (item) => (item.weight === 'normal' ? 400 : item.weight === 'bold' ? 700 : parseFloat(item.weight))
-  const upright = faces.filter((item) => item.style === 'normal')
-  const face = (upright.length ? upright : faces).reduce(
-    (lightest, item) => (!lightest || weightOf(item) < weightOf(lightest) ? item : lightest),
-    null,
-  )
-  if (!face) return null
-  const family = `"${face.family.replace(/^["']|["']$/g, '')}"`
-  const style = `${face.style === 'normal' ? '' : `${face.style} `}${weightOf(face)}`
-  try {
-    const ready = await document.fonts.load(`${style} 72px ${family}`)
-    return ready.length ? { family, style } : null
-  } catch {
-    return null
-  }
-}
 export const HEADER_HEIGHT = 66
 
 const VELVET = '#0a0a0a'
