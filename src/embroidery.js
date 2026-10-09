@@ -828,6 +828,46 @@ function twist(layer, ratio, cell, rowOffset, origin = null) {
   context.restore()
 }
 
+// Round the worked stitches like padded satin: each stroke catches the
+// light along its middle and falls into shade toward its edges. A blurred
+// copy of the stitching is thickest where a stroke is widest, so it
+// lightens the middles and its absence darkens the edges.
+function dome(layer, ratio, cell) {
+  const { canvas, context } = layer
+  if (!('filter' in context)) return
+  const spread = cell * 0.7 * ratio
+  const blurred = document.createElement('canvas')
+  blurred.width = canvas.width
+  blurred.height = canvas.height
+  const soft = blurred.getContext('2d')
+  soft.filter = `blur(${spread}px)`
+  soft.drawImage(canvas, 0, 0)
+
+  // Shade: dark everywhere except where the blurred stitching is solid.
+  const shade = document.createElement('canvas')
+  shade.width = canvas.width
+  shade.height = canvas.height
+  const dark = shade.getContext('2d')
+  dark.fillStyle = 'rgba(52, 50, 46, 0.42)'
+  dark.fillRect(0, 0, shade.width, shade.height)
+  dark.globalCompositeOperation = 'destination-out'
+  dark.drawImage(blurred, 0, 0)
+
+  // Light: the blurred stitching itself, nudged up and left toward the
+  // light, as a faint sheen.
+  soft.filter = 'none'
+  soft.globalCompositeOperation = 'source-in'
+  soft.fillStyle = 'rgba(255, 255, 255, 0.5)'
+  soft.fillRect(0, 0, blurred.width, blurred.height)
+
+  context.save()
+  context.setTransform(1, 0, 0, 1, 0, 0)
+  context.globalCompositeOperation = 'source-atop'
+  context.drawImage(shade, 0.3 * cell * ratio, 0.4 * cell * ratio)
+  context.drawImage(blurred, -0.25 * cell * ratio, -0.3 * cell * ratio)
+  context.restore()
+}
+
 // Fray the outer edges of the worked stitches: short loose fibres curl out
 // wherever a stitch has open mesh beside it, so letters end softly, as
 // thread does, instead of at a hard pixel edge. `cells` holds the worked
@@ -1262,6 +1302,7 @@ export class LaceRenderer {
       }
     }
     twist(this.textLayer, this.ratio, cell, bandStart)
+    dome(this.textLayer, this.ratio, cell)
     fray(context, stitches, cell, geometry.lineWidth, bandStart)
     soften(this.textLayer, this.ratio * 0.3)
     raise(this.textLayer, this.ratio)
@@ -1286,6 +1327,7 @@ export class LaceRenderer {
       stitches.add(`${gx},${gy}`)
     }
     twist(layer, ratio, cell, 0, [left, top])
+    dome(layer, ratio, cell)
     fray(layer.context, stitches, cell, lineWidth, 0)
     soften(layer, ratio * 0.3)
     raise(layer, ratio)
