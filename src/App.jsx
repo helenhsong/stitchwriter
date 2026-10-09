@@ -9,11 +9,9 @@ import {
 import { ProjectHeader } from '@helenhsong/ui'
 import '@helenhsong/ui/style.css'
 import '@fontsource/playfair-display/latin-400-italic.css'
-import '@fontsource/geist-pixel/latin-400.css'
 import {
   HEADER_HEIGHT,
   LaceRenderer,
-  LABEL_FONT,
   STITCH_FONT,
   STITCH_FONT_STYLE,
   caretIndexAt,
@@ -70,10 +68,7 @@ function useFontReady() {
     let active = true
     const timeout = new Promise((resolve) => window.setTimeout(resolve, 1800))
     const fontLoad = document.fonts
-      ? Promise.all([
-          document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`),
-          document.fonts.load(`88px ${LABEL_FONT}`),
-        ])
+      ? document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`)
       : Promise.resolve()
 
     Promise.race([fontLoad, timeout]).then(() => {
@@ -116,13 +111,6 @@ function App() {
     () => createGeometry(viewport.width, viewport.height),
     [viewport.width, viewport.height],
   )
-  // Line the header buttons up with the seal where they share a row.
-  useLayoutEffect(() => {
-    const root = document.documentElement
-    const { middle } = geometry.seal
-    if (middle === null) root.style.removeProperty('--seal-middle')
-    else root.style.setProperty('--seal-middle', `${middle}px`)
-  }, [geometry])
   const placeholder = !text
   const layout = useMemo(
     () => (fontReady ? layoutText(text, geometry) : null),
@@ -400,7 +388,8 @@ function App() {
       <ProjectHeader />
       <button
         type="button"
-        className="lace-unstitch"
+        // The header's own label style, so it matches helenhsong.com.
+        className="lace-unstitch ph-label w-fit cursor-pointer text-xs leading-[150%] font-['iAWriterMonoV-Regular','iA_Writer_Mono_V',system-ui,sans-serif] transition-colors focus:outline-none focus-visible:outline-none"
         onMouseDown={(event) => event.preventDefault()}
         onClick={unstitchAll}
       >

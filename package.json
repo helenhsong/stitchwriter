@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@fontsource/cormorant-garamond": "^5.3.0",
-    "@fontsource/geist-pixel": "^5.3.0",
     "@fontsource/playfair-display": "^5.3.0",
     "@helenhsong/ui": "github:helenhsong/ui#c30be2cf81d729b50ef661077d54019d6fd8d8a7",
     "react": "^19.2.8",
