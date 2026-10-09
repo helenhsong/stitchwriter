@@ -6,6 +6,38 @@ import { CHARTED_SCRIPT, SPACE_ADVANCE } from './chartedScript.js'
 
 export const STITCH_FONT = '"Playfair Display", Georgia, serif'
 export const STITCH_FONT_STYLE = 'italic 400'
+// Helen's Adobe Fonts kit. The typed writing is stitched in its typeface;
+// if the kit can't load (offline, or a domain the kit doesn't allow), the
+// writing falls back to the charted script.
+const FONT_KIT = 'https://use.typekit.net/yso6mwu.css'
+
+const familiesLoaded = () => new Set([...document.fonts].map((face) => face.family))
+
+// Load the kit and return its typeface for stitching, or null.
+export async function loadKitFace() {
+  if (!document.fonts) return null
+  const before = familiesLoaded()
+  const link = document.createElement('link')
+  link.rel = 'stylesheet'
+  link.href = FONT_KIT
+  const loaded = new Promise((resolve) => {
+    link.onload = () => resolve(true)
+    link.onerror = () => resolve(false)
+  })
+  document.head.append(link)
+  if (!(await loaded)) return null
+  const faces = [...document.fonts].filter((face) => !before.has(face.family))
+  const face = faces.find((item) => item.style === 'normal' && /^(400|normal)$/.test(item.weight)) ?? faces[0]
+  if (!face) return null
+  const family = `"${face.family.replace(/^["']|["']$/g, '')}"`
+  const style = `${face.style === 'normal' ? '' : `${face.style} `}${face.weight === 'normal' ? 400 : face.weight}`
+  try {
+    const ready = await document.fonts.load(`${style} 72px ${family}`)
+    return ready.length ? { family, style } : null
+  } catch {
+    return null
+  }
+}
 export const HEADER_HEIGHT = 66
 
 const VELVET = '#0a0a0a'
@@ -181,16 +213,18 @@ export function getGlyph(character, em, face) {
 
 // Lay text out on the grid. Columns are relative to the text area's left
 // edge; lines are counted from the text area's top.
-export function layoutText(text, geometry) {
+export function layoutText(text, geometry, face) {
   const { em, textCols } = geometry
-  const spaceAdvance = SPACE_ADVANCE * Math.max(1, Math.round(em / CHART_EM))
+  const spaceAdvance = face
+    ? Math.max(2, Math.round(getMeasureContext(em, face).measureText(' ').width / SUBSAMPLE))
+    : SPACE_ADVANCE * Math.max(1, Math.round(em / CHART_EM))
   const characters = Array.from(text)
   const placed = []
   let line = 0
   let x = 0
 
   const advanceOf = (character) =>
-    /\s/.test(character) ? spaceAdvance : getGlyph(character, em).advance
+    /\s/.test(character) ? spaceAdvance : getGlyph(character, em, face).advance
 
   let index = 0
   while (index < characters.length) {
@@ -231,7 +265,7 @@ export function layoutText(text, geometry) {
     }
 
     for (let cursor = index; cursor < end; cursor += 1) {
-      const glyph = getGlyph(characters[cursor], em)
+      const glyph = getGlyph(characters[cursor], em, face)
       if (x > 0 && x + glyph.advance > textCols) {
         line += 1
         x = 0

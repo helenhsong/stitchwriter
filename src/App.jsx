@@ -19,6 +19,7 @@ import {
   caretPosition,
   createGeometry,
   layoutText,
+  loadKitFace,
   stitchDuration,
 } from './embroidery.js'
 
@@ -62,18 +63,23 @@ function useViewport() {
   return size
 }
 
-function useFontReady() {
-  const [ready, setReady] = useState(false)
+// Ready once the fallback face and Helen's font kit have loaded (or given
+// up); returns the kit's typeface for the writing, or null without it.
+function useStitchFace() {
+  const [state, setState] = useState({ ready: false, face: null })
 
   useEffect(() => {
     let active = true
-    const timeout = new Promise((resolve) => window.setTimeout(resolve, 1800))
-    const fontLoad = document.fonts
+    const timeout = (ms, value) => new Promise((resolve) => window.setTimeout(() => resolve(value), ms))
+    const fallback = document.fonts
       ? document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`)
       : Promise.resolve()
 
-    Promise.race([fontLoad, timeout]).then(() => {
-      if (active) setReady(true)
+    Promise.all([
+      Promise.race([fallback, timeout(1800)]),
+      Promise.race([loadKitFace().catch(() => null), timeout(2500, null)]),
+    ]).then(([, face]) => {
+      if (active) setState({ ready: true, face })
     })
 
     return () => {
@@ -81,7 +87,7 @@ function useFontReady() {
     }
   }, [])
 
-  return ready
+  return state
 }
 
 // ProjectHeader marks <html data-ph-open> while its README panel is showing.
@@ -124,7 +130,7 @@ function App() {
   // so the border only draws in as the stitches come out.
   const [ghostRows, setGhostRows] = useState(0)
   const sceneRef = useRef(null)
-  const fontReady = useFontReady()
+  const { ready: fontReady, face: stitchFace } = useStitchFace()
   const reducedMotion = useReducedMotion()
   const viewport = useViewport()
   const readmeOpen = useReadmeOpen()
@@ -135,8 +141,8 @@ function App() {
   )
   const placeholder = !text
   const layout = useMemo(
-    () => (fontReady ? layoutText(text, geometry) : null),
-    [fontReady, geometry, text],
+    () => (fontReady ? layoutText(text, geometry, stitchFace) : null),
+    [fontReady, geometry, stitchFace, text],
   )
   // The piece is sized to its writing: it starts one line tall and grows
   // a row at a time as the writing gets longer.
