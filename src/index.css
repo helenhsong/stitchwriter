@@ -1,15 +1,15 @@
 html {
   scrollbar-width: thin;
-  scrollbar-color: #b9ae9c transparent;
+  scrollbar-color: #6b6b67 transparent;
 }
 
 html:root {
-  --project-bg: #e3ddd0;
-  --project-fg: #3b2a24;
-  /* The header's links, in the crimson of the embroidery thread. */
-  --project-muted-fg: #980d29;
-  --project-hover-fg: #6e081d;
-  /* Let the cloth show through the fixed header. */
+  --project-bg: #0a0a0a;
+  --project-fg: #f3f3f1;
+  /* The header's links, in white. */
+  --project-muted-fg: #ffffff;
+  --project-hover-fg: #ffffff;
+  /* Let the lace show through the fixed header. */
   --background: transparent;
   background: var(--project-bg);
 }

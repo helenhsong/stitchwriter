@@ -8,10 +8,10 @@ import {
 } from 'react'
 import { ProjectHeader } from '@helenhsong/ui'
 import '@helenhsong/ui/style.css'
-import '@fontsource/pinyon-script/latin-400.css'
+import '@fontsource/playfair-display/latin-400-italic.css'
 import {
   HEADER_HEIGHT,
-  EmbroideryRenderer,
+  LaceRenderer,
   STITCH_FONT,
   STITCH_FONT_STYLE,
   caretIndexAt,
@@ -42,7 +42,7 @@ function useViewport() {
   }))
 
   useEffect(() => {
-    // Reweaving the cloth is costly, so wait for resizing to settle.
+    // Repainting the whole mesh is costly, so wait for resizing to settle.
     let timer = 0
     const update = () => {
       window.clearTimeout(timer)
@@ -255,7 +255,7 @@ function App() {
 
   useEffect(() => {
     if (!fontReady || !canvasRef.current) return undefined
-    const renderer = new EmbroideryRenderer(canvasRef.current)
+    const renderer = new LaceRenderer(canvasRef.current)
     renderer.resize(viewport.width, viewport.height, geometry)
     rendererRef.current = renderer
   }, [fontReady, geometry, viewport.height, viewport.width])
@@ -270,7 +270,7 @@ function App() {
       if (scene && renderer) {
         scene.births = birthsRef.current
         scene.ghosts = ghostsRef.current
-        // Read the scroll position every frame so the cloth moves with the
+        // Read the scroll position every frame so the lace moves with the
         // page smoothly instead of in steps.
         scene.scrollY = window.scrollY
         renderer.draw(scene, now)
@@ -293,7 +293,7 @@ function App() {
   }, [caret, fontReady, geometry, reducedMotion, text])
 
   // Ready to type as soon as the page opens, and any key typed while focus
-  // is elsewhere on the page goes to the cloth.
+  // is elsewhere on the page goes to the lace.
   useEffect(() => {
     if (!fontReady) return undefined
     const input = inputRef.current
@@ -412,8 +412,8 @@ function App() {
           role="img"
           aria-label={
             text
-              ? `Embroidered text: ${text.slice(0, 180)}`
-              : 'An empty piece of linen'
+              ? `Filet-lace text: ${text.slice(0, 180)}`
+              : 'An empty piece of filet lace'
           }
         />
         <textarea

@@ -1,38 +1,31 @@
-// Embroidery engine: the whole viewport is a piece of woven linen, and text
-// is satin-stitched into it in coloured thread, letter by letter. Layout
-// still runs on a fine grid of cells, which also sets the order each
-// letter is worked in.
+// Filet-lace engine: the whole viewport is a crocheted mesh of open cells,
+// and text is "stitched" by filling cells solid, the way filet crochet
+// pictures are worked.
 
-export const STITCH_FONT = '"Pinyon Script", cursive'
-export const STITCH_FONT_STYLE = '400'
+import { CHARTED_SCRIPT, SPACE_ADVANCE } from './chartedScript.js'
+
+export const STITCH_FONT = '"Playfair Display", Georgia, serif'
+export const STITCH_FONT_STYLE = 'italic 400'
 export const HEADER_HEIGHT = 66
 
-// Crimson embroidery floss.
-const FLOSS = [152, 13, 41]
-const FLOSS_LIGHT = [206, 48, 72]
-const FLOSS_DEEP = [124, 10, 33]
-const THREAD = rgb(FLOSS)
-const THREAD_DEEP = rgb(FLOSS_DEEP)
-const TWIST = 'rgba(70, 0, 14, 0.3)'
-// The shadow raised thread casts on the cloth.
-const SHADOW = 'rgb(74, 54, 40)'
-
-const LINEN = [232, 226, 214]
-const LINEN_TILE = 360
-const LINEN_PITCH = 3.2
+const VELVET = '#0a0a0a'
+const THREAD_DEEP = '#8e8d89'
+const THREAD_SHADE = '#cfcecb'
+const THREAD = '#f3f3f1'
+const THREAD_LIGHT = '#fafaf9'
+const THREAD_HIGHLIGHT = '#ffffff'
+const TWIST = 'rgba(110, 110, 106, 0.26)'
 
 const SUBSAMPLE = 8
-// Generous coverage so even hairlines are worked, and revealed, in order.
-const COVERAGE = 0.12
-// Satin stitches lie at this slant, as in machine-embroidered script.
-const SATIN_ANGLE = (-28 * Math.PI) / 180
-// A touch of extra weight so hairlines carry a few stitches.
-const SATIN_WEIGHT = 0.025
+const COVERAGE = 0.42
+// How much hairlines are thickened before charting, in cells. Just enough
+// that fine serifs and joins survive as single stitches.
+const THICKEN = 0.2
 const CELL_FILL_MS = 110
-
-function rgb(colour, alpha = 1) {
-  return `rgba(${colour[0]}, ${colour[1]}, ${colour[2]}, ${alpha})`
-}
+const BLOCK_VARIANTS = 6
+// The mesh pattern repeats every this many rows, so the open lace can
+// scroll smoothly with the page by sliding one painted strip.
+const MESH_PERIOD = 16
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max)
@@ -43,21 +36,13 @@ function hash(x, y) {
   return value - Math.floor(value)
 }
 
-// Smooth one-dimensional value noise.
-function noise(seed, t) {
-  const i = Math.floor(t)
-  const f = t - i
-  const a = hash(seed, i)
-  const b = hash(seed, i + 1)
-  return a + (b - a) * f * f * (3 - 2 * f)
-}
-
 export function createGeometry(viewportWidth, viewportHeight) {
   const compact = viewportWidth < 560
+  // A fine mesh, like thread-weight filet lace: more, smaller cells.
   const cell = compact ? 3 : clamp(Math.round(viewportWidth / 480) + 1, 4, 5)
-  // The script is set at em cells to the font size; everything else
-  // (spacing, the caret, the seal) is sized to match it.
-  const em = 15
+  // Letters are charted at one stitch per cell; em sizes everything else
+  // (fallback punctuation, spacing, the caret) to match them.
+  const em = 10
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
   const headerRows = Math.ceil(HEADER_HEIGHT / cell)
@@ -66,7 +51,7 @@ export function createGeometry(viewportWidth, viewportHeight) {
   const centre = Math.floor(Math.floor(viewportWidth / cell) / 2)
   const sealTop = compact ? headerRows + 2 : 6
   const sealBottom = sealTop + 28
-  // Below the seal, open cloth for the writing.
+  // Below the seal, open lace for the writing.
   const across = compact
     ? Math.floor(viewportWidth / cell) - 16
     : Math.round(Math.min(viewportWidth * 0.56, 760) / cell)
@@ -86,7 +71,8 @@ export function createGeometry(viewportWidth, viewportHeight) {
     rows,
     frame,
     inner,
-    lineHeight: Math.round(em * 1.25),
+    lineWidth: Math.max(0.8, cell * 0.22),
+    lineHeight: Math.round(em * 1.4),
     baselineOffset: em,
     textLeft: inner.left,
     textCols: Math.max(10, inner.right - inner.left + 1),
@@ -98,27 +84,40 @@ export function createGeometry(viewportWidth, viewportHeight) {
 const glyphCache = new Map()
 let measureContext = null
 
-function getMeasureContext(em) {
+function getMeasureContext(em, face) {
   if (!measureContext) {
     measureContext = document.createElement('canvas').getContext('2d')
   }
-  measureContext.font = `${STITCH_FONT_STYLE} ${em * SUBSAMPLE}px ${STITCH_FONT}`
+  measureContext.font = face
+    ? `${face.style} ${em * SUBSAMPLE}px ${face.family}`
+    : `${STITCH_FONT_STYLE} ${em * SUBSAMPLE}px ${STITCH_FONT}`
   return measureContext
 }
 
-// Chart one character onto cells. Cells are relative to the glyph's origin
-// column and baseline row, and are ordered the way satin stitch is worked:
-// column by column from left to right, back and forth across the stroke.
-export function getGlyph(character, em) {
-  const cacheKey = `${em}:${character}`
+// Rasterize one character to filet cells. Cells are relative to the glyph's
+// origin column and baseline row, and are ordered the way they are worked:
+// row by row, turning back at the end of each row like crochet.
+export function getGlyph(character, em, face) {
+  const cacheKey = `${em}:${face?.family ?? ''}:${character}`
   const cached = glyphCache.get(cacheKey)
   if (cached) return cached
 
-  const measure = getMeasureContext(em)
+  // Letters come from the charted script alphabet, worked row by row.
+  const charted = !face && CHARTED_SCRIPT.get(character)
+  if (charted) {
+    const cells = charted.rows
+      .filter((row) => row.length)
+      .flatMap((row, index) => (index % 2 ? [...row].reverse() : row))
+    const glyph = { cells, advance: charted.advance }
+    glyphCache.set(cacheKey, glyph)
+    return glyph
+  }
+
+  const measure = getMeasureContext(em, face)
   const advance = measure.measureText(character).width / SUBSAMPLE
-  const pad = Math.ceil(em * 0.6)
+  const pad = Math.ceil(em * 0.5)
   const ascent = Math.ceil(em * 1.05)
-  const descent = Math.ceil(em * 0.55)
+  const descent = Math.ceil(em * 0.45)
   const widthCells = Math.ceil(advance) + pad * 2
   const heightCells = ascent + descent
   const canvas = document.createElement('canvas')
@@ -129,14 +128,19 @@ export function getGlyph(character, em) {
   context.fillStyle = '#fff'
   context.textBaseline = 'alphabetic'
   context.fillText(character, pad * SUBSAMPLE, ascent * SUBSAMPLE)
+  // Thicken hairlines so thin serifs and joins survive at filet resolution.
+  context.strokeStyle = '#fff'
+  context.lineJoin = 'round'
+  context.lineWidth = SUBSAMPLE * (face?.thicken ?? THICKEN)
+  context.strokeText(character, pad * SUBSAMPLE, ascent * SUBSAMPLE)
 
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
-  const columns = []
+  const rowsOfCells = []
   const area = SUBSAMPLE * SUBSAMPLE
 
-  for (let cx = 0; cx < widthCells; cx += 1) {
-    const column = []
-    for (let cy = 0; cy < heightCells; cy += 1) {
+  for (let cy = 0; cy < heightCells; cy += 1) {
+    const row = []
+    for (let cx = 0; cx < widthCells; cx += 1) {
       let covered = 0
       for (let sy = 0; sy < SUBSAMPLE; sy += 1) {
         const offset = ((cy * SUBSAMPLE + sy) * canvas.width + cx * SUBSAMPLE) * 4
@@ -144,44 +148,38 @@ export function getGlyph(character, em) {
           covered += pixels[offset + sx * 4 + 3] / 255
         }
       }
-      if (covered / area >= COVERAGE) column.push([cx - pad, cy - ascent])
+      if (covered / area >= COVERAGE) row.push([cx - pad, cy - ascent])
     }
-    if (column.length) columns.push(column)
+    if (row.length) rowsOfCells.push(row)
   }
 
-  const cells = columns.flatMap((column, index) =>
-    index % 2 ? column.reverse() : column,
+  const cells = rowsOfCells.flatMap((row, index) =>
+    index % 2 ? row.reverse() : row,
   )
-  const glyph = { character, cells, advance }
+  const glyph = { cells, advance }
   glyphCache.set(cacheKey, glyph)
   return glyph
 }
 
-function spaceAdvance(em) {
-  return Math.max(em * 0.3, getMeasureContext(em).measureText(' ').width / SUBSAMPLE)
-}
-
 // Lay text out on the grid. Columns are relative to the text area's left
-// edge; lines are counted from the text area's top. `x` keeps each letter's
-// exact position so joined script letters meet; `col` and `end` are snapped
-// to cells for the caret.
+// edge; lines are counted from the text area's top.
 export function layoutText(text, geometry) {
   const { em, textCols } = geometry
-  const space = spaceAdvance(em)
+  const spaceAdvance = SPACE_ADVANCE
   const characters = Array.from(text)
   const placed = []
   let line = 0
   let x = 0
 
   const advanceOf = (character) =>
-    /\s/.test(character) ? space : getGlyph(character, em).advance
+    /\s/.test(character) ? spaceAdvance : getGlyph(character, em).advance
 
   let index = 0
   while (index < characters.length) {
     const character = characters[index]
 
     if (character === '\n') {
-      placed.push({ index, character, x, col: Math.round(x), end: Math.round(x), line, glyph: null })
+      placed.push({ index, character, col: Math.round(x), end: Math.round(x), line, glyph: null })
       line += 1
       x = 0
       index += 1
@@ -192,13 +190,12 @@ export function layoutText(text, geometry) {
       placed.push({
         index,
         character,
-        x,
         col: Math.round(x),
-        end: Math.round(x + space),
+        end: Math.round(x + spaceAdvance),
         line,
         glyph: null,
       })
-      x += space
+      x += spaceAdvance
       index += 1
       continue
     }
@@ -224,7 +221,6 @@ export function layoutText(text, geometry) {
       placed.push({
         index: cursor,
         character: characters[cursor],
-        x,
         col: Math.round(x),
         end: Math.round(x + glyph.advance),
         line,
@@ -239,7 +235,7 @@ export function layoutText(text, geometry) {
     characters: placed,
     lines: line + 1,
     endCaret: { col: Math.round(x), line },
-    height: geometry.baselineOffset + line * geometry.lineHeight + Math.round(em * 0.6),
+    height: geometry.baselineOffset + line * geometry.lineHeight + Math.round(em * 0.5),
   }
 }
 
@@ -253,9 +249,9 @@ export function caretPosition(layout, index) {
 // coordinates lands on, or null when the click is not on the writing.
 export function caretIndexAt(layout, geometry, col, row) {
   const { lineHeight, baselineOffset, em } = geometry
-  const line = Math.round((row - baselineOffset + em * 0.3) / lineHeight)
+  const line = Math.round((row - baselineOffset + em * 0.35) / lineHeight)
   const baseline = baselineOffset + line * lineHeight
-  if (row < baseline - em * 0.8 || row > baseline + em * 0.35) return null
+  if (row < baseline - em * 1.0 || row > baseline + em * 0.4) return null
 
   const onLine = layout.characters.filter(
     (item) => item.line === line && item.character !== '\n',
@@ -286,275 +282,329 @@ function makeCanvas(width, height, ratio) {
   return { canvas, context }
 }
 
-// A seamless tile of plain-woven linen in device pixels. Threads are uneven
-// in width and tone, with slubs along their length, as real linen is.
-function makeLinenTile(ratio) {
-  const size = Math.round(LINEN_TILE * ratio)
-  const threads = Math.round(LINEN_TILE / LINEN_PITCH / 2) * 2
+// A dark velvet ground: fine speckled pile with a soft vignette.
+function paintVelvet(context, width, height) {
+  context.fillStyle = VELVET
+  context.fillRect(0, 0, width, height)
 
-  // Uneven thread spacing that still wraps exactly round the tile.
-  const spacing = (seed) => {
-    const widths = Array.from(
-      { length: threads },
-      (_, i) => 0.7 + hash(i, seed) * 0.6 + (hash(seed, i) > 0.9 ? 0.4 : 0),
-    )
-    const total = widths.reduce((sum, width) => sum + width, 0)
-    const index = new Int16Array(size)
-    const along = new Float32Array(size)
-    let edge = 0
-    let k = 0
-    for (let i = 0; i < threads; i += 1) {
-      const width = (widths[i] / total) * size
-      for (; k < size && k < edge + width; k += 1) {
-        index[k] = i
-        along[k] = (k + 0.5 - edge) / width
-      }
-      edge += width
-    }
-    for (; k < size; k += 1) {
-      index[k] = threads - 1
-      along[k] = 0.99
-    }
-    return { index, along }
+  const tile = document.createElement('canvas')
+  tile.width = 96
+  tile.height = 96
+  const tileContext = tile.getContext('2d')
+  const image = tileContext.createImageData(96, 96)
+  for (let i = 0; i < image.data.length; i += 4) {
+    const pixel = i / 4
+    const shade = hash(pixel % 96, Math.floor(pixel / 96))
+    image.data[i] = 36
+    image.data[i + 1] = 36
+    image.data[i + 2] = 36
+    image.data[i + 3] = shade > 0.55 ? Math.round((shade - 0.55) * 70) : 0
   }
-  const warp = spacing(3.7)
-  const weft = spacing(8.1)
-  const tone = (seed, i) =>
-    0.9 + hash(i, seed) * 0.16 + (hash(seed, i * 3) > 0.93 ? -0.07 : 0)
+  tileContext.putImageData(image, 0, 0)
+  context.fillStyle = context.createPattern(tile, 'repeat')
+  context.fillRect(0, 0, width, height)
 
-  const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
-  const context = canvas.getContext('2d')
-  const image = context.createImageData(size, size)
-  const data = image.data
-  const slubs = 7
-
-  for (let y = 0; y < size; y += 1) {
-    const j = weft.index[y]
-    const v = weft.along[y]
-    for (let x = 0; x < size; x += 1) {
-      const i = warp.index[x]
-      const u = warp.along[x]
-      const warpOnTop = (i + j) % 2 === 0
-      // Slubs: each thread swells and thins along its length.
-      const warpSlub = noise(i * 1.7 + 40, (y / size) * slubs)
-      const weftSlub = noise(j * 1.3 + 80, (x / size) * slubs)
-      const du = (Math.abs(u - 0.5) * 2) / (0.62 + warpSlub * 0.4)
-      const dv = (Math.abs(v - 0.5) * 2) / (0.62 + weftSlub * 0.4)
-      // Each thread is round, and darkens where it dives under the next.
-      let lum = 0.5
-      if (du <= 1 && (warpOnTop || dv > 1)) {
-        const dip = warpOnTop ? 0.55 + 0.45 * Math.sin(Math.PI * v) : 0.6
-        lum = (0.6 + 0.4 * Math.sqrt(1 - du * du) * dip) * tone(2.3, i) * (0.96 + warpSlub * 0.08)
-      } else if (dv <= 1) {
-        const dip = warpOnTop ? 0.6 : 0.55 + 0.45 * Math.sin(Math.PI * u)
-        lum = (0.6 + 0.4 * Math.sqrt(1 - dv * dv) * dip) * tone(5.9, j) * (0.96 + weftSlub * 0.08)
-      }
-      const fleck = hash(x * 1.31 + 0.5, y * 0.73 + 0.25)
-      const light = 0.62 + lum * 0.4 + (fleck - 0.5) * 0.05 + (fleck > 0.997 ? -0.18 : 0)
-      const k = (x + y * size) * 4
-      data[k] = Math.min(255, LINEN[0] * light)
-      data[k + 1] = Math.min(255, LINEN[1] * light)
-      data[k + 2] = Math.min(255, LINEN[2] * light * 0.99)
-      data[k + 3] = 255
-    }
-  }
-  context.putImageData(image, 0, 0)
-  return canvas
-}
-
-// Satin-stitch one character. The letter's shape is filled with closely
-// laid stitches at a slant, each round and catching the light in the
-// middle, darker where it dips into the cloth at either end. Long runs are
-// split into staggered stitches, as an embroiderer would. Returns a canvas
-// in device pixels and the glyph origin within it in CSS pixels.
-function satinSprite(character, size, ratio) {
-  const font = `${STITCH_FONT_STYLE} ${size}px ${STITCH_FONT}`
-  const measure = document.createElement('canvas').getContext('2d')
-  measure.font = font
-  const metrics = measure.measureText(character)
-  const pad = Math.ceil(size * 0.25)
-  const ox = pad + Math.max(0, metrics.actualBoundingBoxLeft)
-  const oy = pad + metrics.actualBoundingBoxAscent
-  const width = ox + Math.max(1, metrics.actualBoundingBoxRight) + pad
-  const height = oy + Math.max(0, metrics.actualBoundingBoxDescent) + pad
-  const W = Math.ceil(width * ratio)
-  const H = Math.ceil(height * ratio)
-
-  const mask = document.createElement('canvas')
-  mask.width = W
-  mask.height = H
-  const maskContext = mask.getContext('2d')
-  maskContext.scale(ratio, ratio)
-  maskContext.font = font
-  maskContext.lineJoin = 'round'
-  maskContext.fillText(character, ox, oy)
-  maskContext.lineWidth = size * SATIN_WEIGHT
-  maskContext.strokeText(character, ox, oy)
-
-  // Turn the letter so its stitches lie level, then lay them row by row.
-  const D = Math.ceil(Math.hypot(W, H)) + 2
-  const turned = document.createElement('canvas')
-  turned.width = D
-  turned.height = D
-  const turnedContext = turned.getContext('2d', { willReadFrequently: true })
-  turnedContext.translate(D / 2, D / 2)
-  turnedContext.rotate(-SATIN_ANGLE)
-  turnedContext.drawImage(mask, -W / 2, -H / 2)
-  const alpha = turnedContext.getImageData(0, 0, D, D).data
-  const covered = (x, y) => alpha[(y * D + x) * 4 + 3] >= 110
-
-  const stitches = document.createElement('canvas')
-  stitches.width = D
-  stitches.height = D
-  const stitchContext = stitches.getContext('2d')
-  const pitch = Math.max(2, 1.25 * ratio)
-  const radius = pitch * 0.48
-  const longest = size * ratio * 0.32
-  const tip = 0.7 * ratio
-  let row = 0
-  for (let y = pitch / 2; y < D - 1; y += pitch, row += 1) {
-    const yy = Math.round(y)
-    let x = 0
-    while (x < D) {
-      while (x < D && !covered(x, yy)) x += 1
-      if (x >= D) break
-      const start = x
-      while (x < D && covered(x, yy)) x += 1
-      const length = x - start
-      const pieces = Math.ceil(length / longest)
-      const stagger = (row % 3) / 3
-      const cuts = [start]
-      for (let p = 1; p < pieces; p += 1) {
-        cuts.push(start + length * ((p - 0.5 + stagger) / pieces))
-      }
-      cuts.push(x)
-      for (let c = 0; c + 1 < cuts.length; c += 1) {
-        const a = cuts[c]
-        const b = cuts[c + 1]
-        if (b - a < 0.5) continue
-        const sheen = 0.85 + hash(row, a) * 0.3
-        const light = FLOSS_LIGHT.map((value, k) => FLOSS[k] + (value - FLOSS[k]) * sheen)
-        const shade = stitchContext.createLinearGradient(a, 0, b, 0)
-        shade.addColorStop(0, rgb(FLOSS_DEEP))
-        shade.addColorStop(Math.min(0.3, tip / (b - a)), rgb(FLOSS))
-        shade.addColorStop(0.42, rgb(light))
-        shade.addColorStop(Math.max(0.7, 1 - tip / (b - a)), rgb(FLOSS))
-        shade.addColorStop(1, rgb(FLOSS_DEEP))
-        stitchContext.fillStyle = shade
-        stitchContext.beginPath()
-        stitchContext.roundRect(a - 0.3, y - radius, b - a + 0.6, radius * 2, radius)
-        stitchContext.fill()
-        stitchContext.fillStyle = 'rgba(255, 200, 205, 0.12)'
-        stitchContext.fillRect(a + 1, y - radius * 0.6, Math.max(0, b - a - 2), radius * 0.45)
-      }
-    }
-  }
-
-  const sprite = document.createElement('canvas')
-  sprite.width = W
-  sprite.height = H
-  const context = sprite.getContext('2d')
-  // The raised thread casts a soft shadow on the cloth.
-  if ('filter' in context) context.filter = `blur(${ratio * 0.9}px)`
-  context.globalAlpha = 0.45
-  context.drawImage(mask, ratio * 0.6, ratio * 1.1)
-  context.filter = 'none'
-  context.globalAlpha = 1
-  context.globalCompositeOperation = 'source-in'
-  context.fillStyle = SHADOW
-  context.fillRect(0, 0, W, H)
-  context.globalCompositeOperation = 'source-over'
-  context.translate(W / 2, H / 2)
-  context.rotate(SATIN_ANGLE)
-  context.drawImage(stitches, -D / 2, -D / 2)
-  return { canvas: sprite, ox, oy, width, height }
-}
-
-// A cross stitch of two short satin bars, for the fairy dust.
-function drawCross(context, x, y, size) {
-  context.save()
-  context.lineCap = 'round'
-  for (const [dx, dy] of [[1, 1], [1, -1]]) {
-    context.beginPath()
-    context.moveTo(x - dx * size, y - dy * size)
-    context.lineTo(x + dx * size, y + dy * size)
-    context.strokeStyle = 'rgba(74, 54, 40, 0.3)'
-    context.lineWidth = 2.1
-    context.translate(0.5, 0.8)
-    context.stroke()
-    context.translate(-0.5, -0.8)
-    context.strokeStyle = THREAD_DEEP
-    context.lineWidth = 1.9
-    context.stroke()
-    context.strokeStyle = THREAD
-    context.lineWidth = 1.3
-    context.stroke()
-    context.strokeStyle = rgb(FLOSS_LIGHT, 0.8)
-    context.lineWidth = 0.5
-    context.stroke()
-  }
-  context.restore()
-}
-
-// A French knot: a small round bead of wrapped thread.
-function drawKnot(context, x, y, radius) {
-  context.save()
-  context.fillStyle = 'rgba(74, 54, 40, 0.3)'
-  context.beginPath()
-  context.arc(x + 0.5, y + 0.8, radius * 1.1, 0, Math.PI * 2)
-  context.fill()
-  const bead = context.createRadialGradient(
-    x - radius * 0.35, y - radius * 0.35, radius * 0.1, x, y, radius,
+  const vignette = context.createRadialGradient(
+    width / 2,
+    height / 2,
+    Math.min(width, height) * 0.2,
+    width / 2,
+    height / 2,
+    Math.max(width, height) * 0.75,
   )
-  bead.addColorStop(0, rgb(FLOSS_LIGHT))
-  bead.addColorStop(0.6, THREAD)
-  bead.addColorStop(1, THREAD_DEEP)
-  context.fillStyle = bead
-  context.beginPath()
-  context.arc(x, y, radius, 0, Math.PI * 2)
-  context.fill()
+  vignette.addColorStop(0, 'rgba(30, 30, 30, 0.3)')
+  vignette.addColorStop(1, 'rgba(0, 0, 0, 0.35)')
+  context.fillStyle = vignette
+  context.fillRect(0, 0, width, height)
+}
+
+// Jittered mesh vertex: hand-worked mesh is never perfectly square.
+function vertex(geometry, i, j) {
+  const { cell, lineWidth } = geometry
+  const wobble = cell * 0.07
+  return {
+    x: i * cell + lineWidth / 2 + (hash(i, j % MESH_PERIOD) - 0.5) * wobble,
+    y: j * cell + lineWidth / 2 + (hash((j % MESH_PERIOD) + 91, i) - 0.5) * wobble,
+  }
+}
+
+// Stroke one batch of thread segments as a round, plied strand.
+function strokeStrand(context, segments, width, tone) {
+  const path = new Path2D()
+  for (const [a, b] of segments) {
+    path.moveTo(a.x, a.y)
+    path.lineTo(b.x, b.y)
+  }
+
+  context.lineCap = 'round'
+  context.save()
+  context.translate(0.5, 0.9)
+  context.strokeStyle = 'rgba(0, 0, 0, 0.55)'
+  context.lineWidth = width * 1.15
+  context.stroke(path)
+  context.restore()
+
+  context.strokeStyle = THREAD_DEEP
+  context.lineWidth = width
+  context.stroke(path)
+  context.save()
+  context.translate(-width * 0.06, -width * 0.06)
+  context.strokeStyle = tone
+  context.lineWidth = width * 0.8
+  context.stroke(path)
+  context.translate(-width * 0.1, -width * 0.1)
+  context.strokeStyle = 'rgba(255, 255, 255, 0.55)'
+  context.lineWidth = width * 0.22
+  context.stroke(path)
   context.restore()
 }
 
-// The seal over the writing: "type anything" stitched in the script, with
-// fairy dust of cross stitches and French knots round about. Positions
-// are in document cells; `size` scales the title against the writing.
-const SEAL_TITLE = 'type anything'
-const SEAL_SCALE = 0.8
+// Diagonal twist marks across each segment, so the strand reads as plied.
+function strokeTwist(context, segments, width) {
+  const path = new Path2D()
+  const step = Math.max(1.6, width * 0.95)
+  for (const [a, b] of segments) {
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const length = Math.hypot(dx, dy)
+    const ux = dx / length
+    const uy = dy / length
+    const nx = -uy
+    const ny = ux
+    for (let t = step * 0.6; t < length; t += step) {
+      const cx = a.x + ux * t
+      const cy = a.y + uy * t
+      path.moveTo(cx - nx * width * 0.42 - ux * width * 0.3, cy - ny * width * 0.42 - uy * width * 0.3)
+      path.lineTo(cx + nx * width * 0.42 + ux * width * 0.3, cy + ny * width * 0.42 + uy * width * 0.3)
+    }
+  }
+  context.strokeStyle = TWIST
+  context.lineWidth = Math.max(0.5, width * 0.22)
+  context.lineCap = 'round'
+  context.stroke(path)
+}
 
-function sealLayout(geometry) {
+function paintMesh(context, geometry) {
+  const { cols, rows, lineWidth } = geometry
+  context.save()
+  context.globalAlpha = 0.82
+  const buckets = [[], [], []]
+  const knots = []
+
+  for (let j = 0; j <= rows; j += 1) {
+    const jp = j % MESH_PERIOD
+    for (let i = 0; i <= cols; i += 1) {
+      const here = vertex(geometry, i, j)
+      knots.push(here)
+      if (i < cols) {
+        buckets[Math.floor(hash(i * 3 + 1, jp) * 3)].push([here, vertex(geometry, i + 1, j)])
+      }
+      if (j < rows) {
+        buckets[Math.floor(hash(i, jp * 3 + 2) * 3)].push([here, vertex(geometry, i, j + 1)])
+      }
+    }
+  }
+
+  // Open mesh is a little greyer than the solid blocks, as in real
+  // filet lace, so the worked design stands out.
+  const tones = ['#d8d8d5', '#e2e2df', '#cfcfcc']
+
+  // A faint halo of loose fibre around every thread, as cotton lace has.
+  const halo = new Path2D()
+  for (const [a, b] of buckets.flat()) {
+    halo.moveTo(a.x, a.y)
+    halo.lineTo(b.x, b.y)
+  }
+  context.strokeStyle = 'rgba(255, 255, 255, 0.06)'
+  context.lineWidth = lineWidth * 3.2
+  context.lineCap = 'round'
+  context.stroke(halo)
+
+  buckets.forEach((segments, index) =>
+    strokeStrand(context, segments, lineWidth, tones[index]),
+  )
+  if (lineWidth >= 1.4) strokeTwist(context, buckets.flat(), lineWidth)
+
+  // Small knots where chains meet trebles.
+  const knotPath = new Path2D()
+  const knotHighlight = new Path2D()
+  for (const point of knots) {
+    knotPath.moveTo(point.x + lineWidth * 0.95, point.y)
+    knotPath.arc(point.x, point.y, lineWidth * 0.95, 0, Math.PI * 2)
+    knotHighlight.moveTo(point.x - lineWidth * 0.02, point.y - lineWidth * 0.2)
+    knotHighlight.arc(point.x - lineWidth * 0.2, point.y - lineWidth * 0.2, lineWidth * 0.18, 0, Math.PI * 2)
+  }
+  context.fillStyle = '#d6d6d3'
+  context.fill(knotPath)
+  context.fillStyle = 'rgba(255, 255, 255, 0.5)'
+  context.fill(knotHighlight)
+
+  // Stray fibres.
+  const fuzz = new Path2D()
+  for (let j = 0; j < rows; j += 1) {
+    const jp = j % MESH_PERIOD
+    for (let i = 0; i < cols; i += 1) {
+      if (hash(i * 7 + 3, jp * 5 + 1) > 0.18) continue
+      const start = vertex(geometry, i, j)
+      const along = hash(i, jp * 13) * geometry.cell
+      const horizontal = hash(jp, i * 17) > 0.5
+      const x = start.x + (horizontal ? along : 0)
+      const y = start.y + (horizontal ? 0 : along)
+      const angle = hash(i * 19, jp * 23) * Math.PI * 2
+      const length = geometry.cell * (0.25 + hash(i * 29, jp) * 0.4)
+      fuzz.moveTo(x, y)
+      fuzz.quadraticCurveTo(
+        x + Math.cos(angle + 0.8) * length * 0.6,
+        y + Math.sin(angle + 0.8) * length * 0.6,
+        x + Math.cos(angle) * length,
+        y + Math.sin(angle) * length,
+      )
+    }
+  }
+  context.strokeStyle = 'rgba(225, 225, 222, 0.22)'
+  context.lineWidth = 0.45
+  context.stroke(fuzz)
+  context.restore()
+}
+
+// One filled filet block: three treble posts topped by a chain, with
+// round shading and plied twist. A few variants keep it from tiling.
+function makeBlockSprites(geometry, ratio) {
+  const { cell, lineWidth } = geometry
+  const size = cell + lineWidth
+  const sprites = []
+
+  for (let variant = 0; variant < BLOCK_VARIANTS; variant += 1) {
+    const { canvas, context } = makeCanvas(size, size, ratio)
+    const post = size / 3
+    context.fillStyle = THREAD_SHADE
+    context.fillRect(0, 0, size, size)
+
+    for (let k = 0; k < 3; k += 1) {
+      const x = k * post
+      const shade = context.createLinearGradient(x, 0, x + post, 0)
+      shade.addColorStop(0, '#e2e1de')
+      shade.addColorStop(0.35, variant % 2 ? THREAD_LIGHT : THREAD)
+      shade.addColorStop(0.55, THREAD_HIGHLIGHT)
+      shade.addColorStop(1, '#dddcd8')
+      context.fillStyle = shade
+      context.fillRect(x + 0.25, 0, post - 0.5, size)
+      if (k > 0) {
+        context.fillStyle = 'rgba(40, 40, 38, 0.22)'
+        context.fillRect(x - 0.2, lineWidth * 0.8, 0.45, size - lineWidth * 0.8)
+      }
+
+      context.strokeStyle = TWIST
+      context.lineWidth = Math.max(0.5, post * 0.16)
+      context.beginPath()
+      const step = Math.max(1.5, post * 0.8)
+      const phase = hash(variant, k) * step
+      for (let y = -step + phase; y < size + step; y += step) {
+        context.moveTo(x + post * 0.12, y + post * 0.45)
+        context.lineTo(x + post * 0.88, y - post * 0.25)
+      }
+      context.stroke()
+    }
+
+    // Chain across the top edge.
+    const chain = context.createLinearGradient(0, 0, 0, lineWidth)
+    chain.addColorStop(0, THREAD_LIGHT)
+    chain.addColorStop(1, THREAD_SHADE)
+    context.fillStyle = chain
+    context.fillRect(0, 0, size, lineWidth * 0.85)
+    context.strokeStyle = TWIST
+    context.lineWidth = Math.max(0.5, lineWidth * 0.2)
+    context.beginPath()
+    for (let x = hash(variant, 9) * 2; x < size; x += Math.max(1.6, lineWidth)) {
+      context.moveTo(x, lineWidth * 0.1)
+      context.lineTo(x + lineWidth * 0.5, lineWidth * 0.75)
+    }
+    context.stroke()
+
+    sprites.push(canvas)
+  }
+  return sprites
+}
+
+// Hand-charted motifs, as on a cross-stitch sampler. X is a stitch.
+function parseChart(rows) {
+  const width = Math.max(...rows.map((row) => row.length))
+  const cells = rows.flatMap((row, y) =>
+    [...row].flatMap((mark, x) => (mark === 'X' ? [[x, y]] : [])),
+  )
+  return { width, height: rows.length, cells }
+}
+
+// Fairy dust: open diamonds of four stitches, little trios and lone
+// stitches.
+const DIAMOND = parseChart(['.X.', 'X.X', '.X.'])
+const TRIO = parseChart(['X.X', '.X.'])
+
+// The seal over the writing: "type anything" stitched in the charted
+// script, with fairy dust scattered round about.
+function sealCells(geometry) {
   const { seal, em } = geometry
-  const scaled = em * SEAL_SCALE
-  const space = spaceAdvance(scaled)
-  const letters = []
-  let width = 0
-  for (const character of SEAL_TITLE) {
-    if (/\s/.test(character)) {
-      width += space
+  const { centre, top } = seal
+  const seen = new Set()
+  const cells = []
+  const mark = (x, y) => {
+    const gx = Math.round(x)
+    const gy = Math.round(y)
+    const key = `${gx},${gy}`
+    if (seen.has(key)) return
+    seen.add(key)
+    cells.push([gx, gy])
+  }
+  const stamp = (chart, x, y) => {
+    for (const [dx, dy] of chart.cells) mark(x + dx, y + dy)
+  }
+  const glyphs = Array.from('type anything').map((character) =>
+    /\s/.test(character) ? null : getGlyph(character, em),
+  )
+  const space = 4
+  const width = glyphs.reduce((sum, glyph) => sum + (glyph ? glyph.advance : space), 0)
+  const left = Math.round(centre - width / 2)
+  const baseline = top + 15
+  let x = left
+  for (const glyph of glyphs) {
+    if (!glyph) {
+      x += space
       continue
     }
-    letters.push({ character, x: width })
-    width += getGlyph(character, scaled).advance
+    for (const [dx, dy] of glyph.cells) mark(x + dx, baseline + dy)
+    x += glyph.advance
   }
-  const left = seal.centre - width / 2
-  const baseline = seal.top + 15
+
+  // Fairy dust drifting round the words.
   const dust = [
     [-1.12, -9], [-0.95, -12], [-0.62, -12], [-0.2, -13], [0.12, -12],
     [0.48, -13], [0.8, -11], [1.1, -8], [-1.2, 4], [-0.78, 9], [-0.05, 11],
     [0.42, 10], [0.9, 8], [1.24, 3],
-  ].map(([across, down], index) => ({
-    x: seal.centre + across * (width / 2 + 6),
-    y: baseline + down,
-    kind: index % 3 === 0 ? 'cross' : 'knot',
-  }))
-  return {
-    letters: letters.map((letter) => ({ ...letter, x: left + letter.x })),
-    baseline,
-    size: SEAL_SCALE,
-    dust,
+  ]
+  for (const [i, [across, down]] of dust.entries()) {
+    const dx = centre + across * (width / 2 + 6)
+    const dy = baseline + down
+    if (i % 3 === 0) stamp(DIAMOND, dx - 1, dy - 1)
+    else if (i % 5 === 1) stamp(TRIO, dx - 1, dy)
+    else mark(dx, dy)
   }
+  return cells
+}
+
+// Soften a finished layer slightly: lace thread is fuzzy, never crisp.
+function soften(layer, amount) {
+  const { canvas, context } = layer
+  if (!('filter' in context)) return
+  const copy = document.createElement('canvas')
+  copy.width = canvas.width
+  copy.height = canvas.height
+  copy.getContext('2d').drawImage(canvas, 0, 0)
+  context.save()
+  context.setTransform(1, 0, 0, 1, 0, 0)
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.filter = `blur(${amount}px)`
+  context.drawImage(copy, 0, 0)
+  context.restore()
 }
 
 // Sample a cubic Bézier into points.
@@ -583,10 +633,10 @@ function drawStrand(context, points, width) {
   context.lineCap = 'round'
   context.lineJoin = 'round'
 
-  // Shadow cast onto the cloth.
+  // Shadow cast onto the lace.
   context.translate(1.2, 1.8)
   trace()
-  context.strokeStyle = 'rgba(74, 54, 40, 0.28)'
+  context.strokeStyle = 'rgba(0, 0, 0, 0.6)'
   context.lineWidth = width * 1.25
   context.stroke()
   context.translate(-1.2, -1.8)
@@ -599,7 +649,7 @@ function drawStrand(context, points, width) {
   context.lineWidth = width * 0.72
   context.stroke()
   context.translate(-width * 0.12, -width * 0.06)
-  context.strokeStyle = rgb(FLOSS_LIGHT, 0.85)
+  context.strokeStyle = 'rgba(255, 255, 255, 0.75)'
   context.lineWidth = width * 0.22
   context.stroke()
   context.translate(width * 0.12, width * 0.06)
@@ -637,12 +687,13 @@ function threadWidth(geometry) {
 
 const lerp = (a, b, t) => a + (b - a) * t
 
-// The thread is one continuous strand from the cloth to the hand off the
+// The thread is one continuous strand from the lace to the hand off the
 // edge of the piece. While stitching it runs taut up to the hand, and each
-// stitch is drawn up out of the cloth and pulled tight while the hand
-// circles for the next one. At rest the hand drops and the thread goes
-// slack, draping down and away from the insertion point. `tension` moves
-// smoothly between the two, so the thread never vanishes or pops.
+// stitch is worked as a loop drawn up out of the mesh and pulled tight
+// while the hand circles to wrap the yarn for the next one. At rest the
+// hand drops and the thread goes slack, draping down and away from the
+// insertion point. `tension` moves smoothly between the two, so the thread
+// never vanishes or pops.
 function drawThread(context, origin, geometry, { stitch, progress, tension, swing, lift = 0 }) {
   const { cell } = geometry
   const width = threadWidth(geometry)
@@ -669,11 +720,11 @@ function drawThread(context, origin, geometry, { stitch, progress, tension, swin
   )
   taut.push({ x: hand.x + Math.cos(workAngle) * 2400, y: hand.y + Math.sin(workAngle) * 2400 })
 
-  // Resting: a short loose end hangs straight down from the cloth under
-  // its own weight, swaying a little.
+  // Resting: a short loose end hangs straight down from the lace under its
+  // own weight, swaying a little.
   // While unpicking, the same short end is lifted up and away from the
   // stitch it is pulling out.
-  const hang = Math.max(56, geometry.em * cell * 0.65)
+  const hang = Math.max(56, geometry.em * cell * 0.95)
   const up = lift * lift * (3 - 2 * lift)
   const rest = {
     x: origin.x + cell * 1.5 + swing * cell * 2 + hang * 0.55 * up,
@@ -692,7 +743,7 @@ function drawThread(context, origin, geometry, { stitch, progress, tension, swin
     x: lerp(point.x, taut[index].x, ease),
     y: lerp(point.y, taut[index].y, ease),
   }))
-  // Where the thread leaves the cloth.
+  // Where the thread leaves the lace.
   shape.unshift({ ...origin })
   // Pulled taut, the thread pays out to its full length; let go, it
   // gathers back up into the short hanging end.
@@ -703,7 +754,7 @@ function drawThread(context, origin, geometry, { stitch, progress, tension, swin
     context.lineCap = 'round'
     context.beginPath()
     context.ellipse(origin.x, origin.y - loop * 0.9, loop * 0.7, loop, 0.25, 0, Math.PI * 2)
-    context.strokeStyle = 'rgba(74, 54, 40, 0.3)'
+    context.strokeStyle = 'rgba(0, 0, 0, 0.5)'
     context.lineWidth = width * 1.2
     context.stroke()
     context.strokeStyle = THREAD
@@ -758,7 +809,7 @@ function drawFray(context, points, width, amount) {
   context.restore()
 }
 
-export class EmbroideryRenderer {
+export class LaceRenderer {
   constructor(canvas) {
     this.canvas = canvas
     this.context = canvas.getContext('2d')
@@ -775,87 +826,63 @@ export class EmbroideryRenderer {
     this.geometry = geometry
     this.canvas.width = Math.round(width * ratio)
     this.canvas.height = Math.round(height * ratio)
-    this.sprites = new Map()
+    this.blocks = makeBlockSprites(geometry, ratio)
     // The writing is painted for a band of rows taller than the viewport, so
     // scrolling slides the band and repaints only when it runs out.
     this.band = Math.max(24, Math.ceil(geometry.rows * 0.5))
     this.layerRows = geometry.rows + this.band + 2
-    this.clothLayer = makeCanvas(width, height + LINEN_TILE, ratio)
-    this.lightLayer = makeCanvas(width, height, ratio)
+    this.velvetLayer = makeCanvas(width, height, ratio)
+    this.meshLayer = makeCanvas(width, height + (MESH_PERIOD + 1) * geometry.cell, ratio)
     this.textLayer = makeCanvas(width, this.layerRows * geometry.cell, ratio)
     this.bandStart = 0
+    this.ornamentKey = ''
     this.paintBase()
     this.textKey = ''
     this.anchor = null
   }
 
-  // The fixed layers: the linen is one tall strip that slides as the page
-  // scrolls, under a soft fall of light that stays put.
+  drawBlock(context, gx, gy, progress = 1, seed = null) {
+    const { cell, lineWidth } = this.geometry
+    const variant = seed === null ? hash(gx * 5 + 2, gy * 3 + 7) : hash(seed * 5 + 2, 7)
+    const sprite = this.blocks[Math.floor(variant * BLOCK_VARIANTS)]
+    const x = gx * cell
+    const y = gy * cell
+    const size = cell + lineWidth
+    if (progress >= 1) {
+      context.drawImage(sprite, x, y, size, size)
+      return
+    }
+    // Work the three trebles in turn, each growing up from the row below.
+    const post = size / 3
+    const scale = sprite.width / size
+    for (let k = 0; k < 3; k += 1) {
+      const amount = clamp(progress * 3 - k, 0, 1)
+      if (amount <= 0) continue
+      const height = size * amount
+      context.drawImage(
+        sprite,
+        k * post * scale,
+        (size - height) * scale,
+        post * scale,
+        height * scale,
+        x + k * post,
+        y + size - height,
+        post,
+        height,
+      )
+    }
+  }
+
+  // The fixed layers: the velvet ground stays put behind the lace, and the
+  // open mesh is one repeating strip that slides as the page scrolls.
   paintBase() {
-    const { width, height, ratio } = this
-    const tile = makeLinenTile(ratio)
-    const { canvas, context } = this.clothLayer
-    context.save()
-    context.setTransform(1, 0, 0, 1, 0, 0)
-    context.fillStyle = context.createPattern(tile, 'repeat')
-    context.fillRect(0, 0, canvas.width, canvas.height)
-    context.restore()
-
-    const light = this.lightLayer.context
-    const glow = light.createRadialGradient(
-      width * 0.45,
-      height * 0.35,
-      Math.min(width, height) * 0.1,
-      width / 2,
-      height / 2,
-      Math.max(width, height) * 0.8,
-    )
-    glow.addColorStop(0, 'rgba(255, 252, 245, 0.08)')
-    glow.addColorStop(1, 'rgba(70, 52, 34, 0.16)')
-    light.fillStyle = glow
-    light.fillRect(0, 0, width, height)
-  }
-
-  // The satin-stitched letter for a character at a scale of the writing.
-  sprite(character, scale = 1) {
-    const key = `${scale}:${character}`
-    let sprite = this.sprites.get(key)
-    if (!sprite) {
-      const { em, cell } = this.geometry
-      sprite = satinSprite(character, em * cell * scale, this.ratio)
-      this.sprites.set(key, sprite)
-    }
-    return sprite
-  }
-
-  // Draw a letter whose origin is at document cell (gx, baseline gy).
-  drawLetter(context, character, gx, gy, scale = 1) {
-    const { cell } = this.geometry
-    const sprite = this.sprite(character, scale)
-    context.drawImage(
-      sprite.canvas,
-      gx * cell - sprite.ox,
-      gy * cell - sprite.oy,
-      sprite.width,
-      sprite.height,
-    )
-  }
-
-  // Draw only the first `count` cells' worth of a letter, as far as it has
-  // been stitched.
-  drawPartial(context, item, baseRow, count) {
-    const { cell } = this.geometry
-    const { cells } = item.glyph
-    const { gx: left, gy: top } = this.toGrid(item.x, baseRow)
-    context.save()
-    context.beginPath()
-    for (let k = 0; k < count && k < cells.length; k += 1) {
-      const [dx, dy] = cells[k]
-      context.rect((left + dx - 0.6) * cell, (top + dy - 0.6) * cell, cell * 2.2, cell * 2.2)
-    }
-    context.clip()
-    this.drawLetter(context, item.character, left, top)
-    context.restore()
+    const { geometry } = this
+    paintVelvet(this.velvetLayer.context, this.width, this.height)
+    paintMesh(this.meshLayer.context, {
+      ...geometry,
+      rows: geometry.rows + MESH_PERIOD + 1,
+    })
+    soften(this.meshLayer, this.ratio * 0.3)
   }
 
   // Map a text cell to document grid coordinates.
@@ -864,73 +891,87 @@ export class EmbroideryRenderer {
     return { gx: geometry.textLeft + col, gy: geometry.textTop + row }
   }
 
-  // Paint the writing and the seal for the rows of the current band.
+  // Paint the writing and its border for the rows of the current band.
   renderText(scene, animating) {
     const { geometry, bandStart, layerRows } = this
     const { context } = this.textLayer
-    const { layout } = scene
-    const { cell, em } = geometry
+    const { layout, pieceGeometry } = scene
+    const { cell, cols } = geometry
     context.clearRect(0, 0, this.width, layerRows * cell)
-    const inBand = (gy) => gy >= -em && gy <= layerRows + em
-    context.save()
-    context.translate(0, -bandStart * cell)
+    const inBand = (gx, gy) => gx >= -1 && gx <= cols && gy >= -1 && gy <= layerRows
 
-    const { seal } = this
-    if (inBand(seal.baseline - bandStart)) {
-      for (const letter of seal.letters) {
-        this.drawLetter(context, letter.character, letter.x, seal.baseline, seal.size)
-      }
-      for (const { x, y, kind } of seal.dust) {
-        if (kind === 'cross') drawCross(context, x * cell, y * cell, cell * 0.55)
-        else drawKnot(context, x * cell, y * cell, Math.max(1.3, cell * 0.38))
-      }
+    // The border and ornaments grow with the writing, so they live in
+    // document space and scroll with it.
+    const ornamentKey = `${pieceGeometry.frame.bottom}`
+    if (ornamentKey !== this.ornamentKey) {
+      this.ornaments = [
+        ...sealCells(pieceGeometry),
+      ]
+      this.ornamentKey = ornamentKey
+    }
+    for (const [x, y] of this.ornaments) {
+      if (inBand(x, y - bandStart)) this.drawBlock(context, x, y - bandStart)
     }
 
     for (const item of layout.characters) {
       if (!item.glyph || animating.has(item.index)) continue
-      const { gx, gy } = this.toGrid(
-        item.x,
-        geometry.baselineOffset + item.line * geometry.lineHeight,
-      )
-      if (inBand(gy - bandStart)) this.drawLetter(context, item.character, gx, gy)
+      const baseRow = geometry.baselineOffset + item.line * geometry.lineHeight
+      for (const [dx, dy] of item.glyph.cells) {
+        const { gx, gy: row } = this.toGrid(item.col + dx, baseRow + dy)
+        const gy = row - bandStart
+        if (inBand(gx, gy)) this.drawBlock(context, gx, gy)
+      }
     }
-    context.restore()
+    soften(this.textLayer, this.ratio * 0.3)
   }
 
   // Draw a deleted letter `pulled` of the way out. Pulling the loose end
-  // undoes the last stitch worked first, so the letter unravels back the
-  // way it was sewn.
-  drawGhostAt(context, ghost, pulled) {
+  // undoes the last stitch worked first, so the run of stitches slides
+  // back along its path toward the first one and out through that hole:
+  // the letter empties from the bottom up.
+  drawGhostAt(context, ghost, pulled, firstRow, lastRow) {
     const { geometry } = this
     const { item } = ghost
     const { cells } = item.glyph
     const baseRow = geometry.baselineOffset + item.line * geometry.lineHeight
-    const remaining = Math.ceil(cells.length * (1 - pulled))
-    if (remaining <= 0) return null
-    this.drawPartial(context, item, baseRow, remaining)
-    const [dx, dy] = cells[remaining - 1]
-    const { gx, gy } = this.toGrid(item.x + dx, baseRow + dy)
-    // The loose end leaves the cloth at the last stitch still in place.
-    return this.cellCenter(gx, gy)
+    const shift = pulled * cells.length
+    let end = null
+    for (let k = cells.length - 1; k >= 0; k -= 1) {
+      const at = k - shift
+      if (at < 0) break
+      const from = cells[Math.ceil(at)]
+      const to = cells[Math.max(0, Math.ceil(at) - 1)]
+      const f = Math.ceil(at) - at
+      const { gx, gy } = this.toGrid(
+        item.col + from[0] + (to[0] - from[0]) * f,
+        baseRow + from[1] + (to[1] - from[1]) * f,
+      )
+      // The loose end leaves the lace at the last stitch still in place.
+      end ??= this.cellCenter(gx, gy)
+      if (gy >= firstRow && gy <= lastRow) this.drawBlock(context, gx, gy, 1, k)
+    }
+    return end
   }
 
   cellCenter(gx, gy) {
-    const { cell } = this.geometry
-    return { x: (gx + 0.5) * cell, y: (gy + 0.5) * cell }
+    const { cell, lineWidth } = this.geometry
+    return {
+      x: gx * cell + lineWidth + (cell - lineWidth) / 2,
+      y: gy * cell + lineWidth + (cell - lineWidth) / 2,
+    }
   }
 
   draw(scene, now) {
     const { geometry, ratio, context } = this
     const { layout, births, placeholder, caret, reducedMotion } = scene
     const { cell, rows } = geometry
-    if (scene.pieceGeometry.seal !== this.seal?.source) {
-      this.seal = { ...sealLayout(scene.pieceGeometry), source: scene.pieceGeometry.seal }
-    }
 
     // Follow the page scroll exactly, snapped to device pixels so the
-    // writing, cloth and thread move as one.
+    // writing, mesh and thread move as one.
     const scrollY = Math.round(clamp(scene.scrollY, 0, scene.maxScroll) * ratio) / ratio
     const scrollRow = Math.floor(scrollY / cell)
+    const firstRow = scrollRow - 1
+    const lastRow = scrollRow + rows + 1
     if (scrollRow < this.bandStart || scrollRow + rows + 1 > this.bandStart + this.layerRows) {
       this.bandStart = Math.max(0, scrollRow - Math.floor(this.band / 2))
       this.textKey = ''
@@ -949,9 +990,10 @@ export class EmbroideryRenderer {
     }
 
     const textKey = [
-      layout.characters.map((item) => `${item.x},${item.line}`).join(';'),
+      layout.characters.map((item) => `${item.col},${item.line}`).join(';'),
       this.bandStart,
       placeholder,
+      scene.pieceGeometry.frame.bottom,
       [...animating].join(','),
     ].join('|')
     if (textKey !== this.textKey) {
@@ -959,40 +1001,45 @@ export class EmbroideryRenderer {
       this.textKey = textKey
     }
 
-    const clothOffset = Math.round((scrollY % LINEN_TILE) * ratio)
+    const meshOffset = Math.round((scrollY % (MESH_PERIOD * cell)) * ratio)
     const textOffset = Math.round((scrollY - this.bandStart * cell) * ratio)
     context.setTransform(1, 0, 0, 1, 0, 0)
-    context.drawImage(this.clothLayer.canvas, 0, -clothOffset)
-    context.drawImage(this.lightLayer.canvas, 0, 0)
+    context.drawImage(this.velvetLayer.canvas, 0, 0)
+    context.drawImage(this.meshLayer.canvas, 0, -meshOffset)
     context.drawImage(this.textLayer.canvas, 0, -textOffset)
     // Everything below is drawn in document coordinates.
     context.setTransform(ratio, 0, 0, ratio, 0, -scrollY * ratio)
 
-    // Letters being stitched fill in along the order they are worked.
     for (const item of layout.characters) {
       if (!animating.has(item.index)) continue
       const birth = births[item.index]
       const { cells } = item.glyph
       const duration = stitchDuration(item.glyph)
       const baseRow = geometry.baselineOffset + item.line * geometry.lineHeight
-      const done = Math.ceil(((now - birth + CELL_FILL_MS * 0.5) / duration) * cells.length)
-      if (done > 0) this.drawPartial(context, item, baseRow, done)
+      cells.forEach(([dx, dy], cellIndex) => {
+        const start = birth + (cellIndex / cells.length) * duration
+        const progress = clamp((now - start) / CELL_FILL_MS, 0, 1)
+        if (progress <= 0) return
+        const { gx, gy } = this.toGrid(item.col + dx, baseRow + dy)
+        if (gy >= firstRow && gy <= lastRow) this.drawBlock(context, gx, gy, progress)
+      })
     }
 
-    // A deleted letter is pulled out like a single thread, last stitch
-    // first, picking up speed as it goes.
+    // A deleted letter is pulled out like a single thread: the run of
+    // stitches slides back along the path it was worked in and is drawn
+    // out, last stitch first, picking up speed as it goes.
     let pulling = null
     for (const ghost of scene.ghosts ?? []) {
       if (now >= ghost.end || now < ghost.start) {
-        if (now < ghost.start) this.drawGhostAt(context, ghost, 0)
+        if (now < ghost.start) this.drawGhostAt(context, ghost, 0, firstRow, lastRow)
         continue
       }
       const t = clamp((now - ghost.start) / ghost.duration, 0, 1)
-      const end = this.drawGhostAt(context, ghost, t * t)
+      const end = this.drawGhostAt(context, ghost, t * t, firstRow, lastRow)
       if (end) pulling = end
     }
 
-    // The thread comes out of the stitch being worked, or rests at the
+    // The thread comes out of the cell being worked, or rests at the
     // insertion point.
     let target
     let working = false
@@ -1006,7 +1053,7 @@ export class EmbroideryRenderer {
       this.lastStitch = { ...stitch, progress: 1 }
       const [dx, dy] = cells[position]
       const baseRow = geometry.baselineOffset + item.line * geometry.lineHeight
-      const { gx, gy } = this.toGrid(item.x + dx, baseRow + dy)
+      const { gx, gy } = this.toGrid(item.col + dx, baseRow + dy)
       target = this.cellCenter(gx, gy)
       working = true
     } else if (pulling) {
@@ -1020,10 +1067,10 @@ export class EmbroideryRenderer {
       if (before?.glyph && before.line === caret.line) {
         const [dx, dy] = before.glyph.cells.at(-1)
         const baseRow = geometry.baselineOffset + before.line * geometry.lineHeight
-        const { gx, gy } = this.toGrid(before.x + dx, baseRow + dy)
+        const { gx, gy } = this.toGrid(before.col + dx, baseRow + dy)
         target = this.cellCenter(gx, gy)
       } else {
-        const row = geometry.baselineOffset + caret.line * geometry.lineHeight - Math.round(geometry.em * 0.2)
+        const row = geometry.baselineOffset + caret.line * geometry.lineHeight - Math.round(geometry.em * 0.28)
         const { gx, gy } = this.toGrid(caret.col, row)
         target = this.cellCenter(gx, gy)
         target.x -= cell / 2
@@ -1069,5 +1116,5 @@ export class EmbroideryRenderer {
 }
 
 export function stitchDuration(glyph) {
-  return clamp(glyph.cells.length * 4, 280, 650)
+  return clamp(glyph.cells.length * 5, 280, 650)
 }
