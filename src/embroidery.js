@@ -694,26 +694,9 @@ const CHARTED_INK = 11
 // stitches.
 const DIAMOND = parseChart(['.X.', 'X.X', '.X.'])
 const TRIO = parseChart(['X.X', '.X.'])
-// A filet rose between two hanging leaves, charted from a doily: solid
-// stitching, with the rosebud and the leaf veins drawn in open mesh.
-const SPRAY = parseChart([
-  '............XXXXXXX............',
-  '..........XXXXXXXXXXX..........',
-  '.........XXXXX...XXXXX.........',
-  '.........XXXX.XXX.XXXX.........',
-  '.........XXX.XXXXX.XXX.........',
-  '.........XX.XXXXXXX.XX.........',
-  '.........XX.X.....X.XX.........',
-  '.......XXXX.XXXXXXX.XXXX.......',
-  '.....XXXXXXX.XXXXX.XXXXXXX.....',
-  '...XXXXXXXXX.XXXXX.XXXXXXXXX...',
-  '..XXX.XXXXXXX.XXX.XXXXXXX.XXX..',
-  '.XXX.XXX.XXXXX.X.XXXXX.XXX.XXX.',
-  'XXX.XXX..XXXXXX.XXXXXX..XXX.XXX',
-  'XX.XXX....XXXXXXXXXXX....XXX.XX',
-  'X.XXX.......XXXXXXX.......XXX.X',
-  'XXX.........................XXX',
-])
+// One scallop of a doily's edge, worked solid with an eyelet, and the
+// width of one repeat. Charted pointing up; the lower edge is flipped.
+const SCALLOP = parseChart(['..XXX...', '.XX.XX..', 'XXXXXXX.', 'XXXXXXXX'])
 
 // The seal over the writing: "type anything" stitched in the writing's
 // typeface, with fairy dust scattered round about. It is worked one stitch
@@ -758,21 +741,28 @@ function sealCells(geometry, face) {
     x += glyph.advance
   }
 
-  // A spray of rose and leaves at each end of the words,
-  // charted at the words' own stitch size.
+  // A scalloped edge above and below the words, as round a doily, charted
+  // at the words' own stitch size and clear of the dust.
   const unit = Math.max(1, Math.round((inkBottom - inkTop + 1) / CHARTED_INK))
-  const motif = (chart, x, y) => {
-    for (const [dx, dy] of chart.cells) {
-      for (let i = 0; i < unit; i += 1) {
-        for (let j = 0; j < unit; j += 1) mark(x + dx * unit + i, y + dy * unit + j)
+  const repeat = SCALLOP.width * unit
+  const count = Math.ceil((width + 24) / repeat) | 1
+  const edgeLeft = Math.round(centre - (count * repeat) / 2)
+  const edge = (y, flip) => {
+    for (let k = 0; k < count; k += 1) {
+      for (const [dx, dy] of SCALLOP.cells) {
+        // The last repeat closes the band without starting another scallop.
+        if (k === count - 1 && dx === SCALLOP.width - 1) continue
+        const row = flip ? SCALLOP.height - 1 - dy : dy
+        for (let i = 0; i < unit; i += 1) {
+          for (let j = 0; j < unit; j += 1) {
+            mark(edgeLeft + k * repeat + dx * unit + i, y + row * unit + j)
+          }
+        }
       }
     }
   }
-  const middle = baseline + Math.round((inkTop + inkBottom) / 2)
-  const gap = 3 * unit
-  const sprayTop = middle - Math.floor((SPRAY.height * unit) / 2)
-  motif(SPRAY, left - gap - SPRAY.width * unit, sprayTop)
-  motif(SPRAY, left + width + gap, sprayTop)
+  edge(baseline + inkTop - 9 - SCALLOP.height * unit, false)
+  edge(baseline + inkBottom + 12, true)
 
   // Fairy dust drifting round the words.
   const dust = [
