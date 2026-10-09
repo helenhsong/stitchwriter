@@ -26,6 +26,8 @@ const BLOCK_VARIANTS = 6
 // The mesh pattern repeats every this many rows, so the open lace can
 // scroll smoothly with the page by sliding one painted strip.
 const MESH_PERIOD = 16
+// Mesh thread width as a share of the filled blocks' thread.
+const MESH_THREAD = 0.55
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max)
@@ -385,9 +387,12 @@ function strokeTwist(context, segments, width) {
 }
 
 function paintMesh(context, geometry) {
-  const { cols, rows, lineWidth } = geometry
+  const { cols, rows } = geometry
+  // The open mesh is worked in a much finer, fainter thread than the
+  // filled blocks, so stitched letters read clearly against it.
+  const lineWidth = geometry.lineWidth * MESH_THREAD
   context.save()
-  context.globalAlpha = 0.82
+  context.globalAlpha = 0.5
   const buckets = [[], [], []]
   const knots = []
 
@@ -415,7 +420,7 @@ function paintMesh(context, geometry) {
     halo.moveTo(a.x, a.y)
     halo.lineTo(b.x, b.y)
   }
-  context.strokeStyle = 'rgba(255, 255, 255, 0.06)'
+  context.strokeStyle = 'rgba(255, 255, 255, 0.03)'
   context.lineWidth = lineWidth * 3.2
   context.lineCap = 'round'
   context.stroke(halo)
@@ -434,7 +439,7 @@ function paintMesh(context, geometry) {
     knotHighlight.moveTo(point.x - lineWidth * 0.02, point.y - lineWidth * 0.2)
     knotHighlight.arc(point.x - lineWidth * 0.2, point.y - lineWidth * 0.2, lineWidth * 0.18, 0, Math.PI * 2)
   }
-  context.fillStyle = '#d6d6d3'
+  context.fillStyle = '#c4c4c0'
   context.fill(knotPath)
   context.fillStyle = 'rgba(255, 255, 255, 0.5)'
   context.fill(knotHighlight)
@@ -461,7 +466,7 @@ function paintMesh(context, geometry) {
       )
     }
   }
-  context.strokeStyle = 'rgba(225, 225, 222, 0.22)'
+  context.strokeStyle = 'rgba(225, 225, 222, 0.12)'
   context.lineWidth = 0.45
   context.stroke(fuzz)
   context.restore()
