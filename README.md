@@ -1,6 +1,6 @@
 # Stitchwriter
 
-Type anything and watch it become a growing piece of cross-stitch embroidery.
+Type anything and watch your words get stitched into fabric, one square at a time.
 
 Stitchwriter was inspired by two projects.
 
