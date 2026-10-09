@@ -161,3 +161,16 @@ html[data-ph-open] body {
   scrollbar-width: thin;
   scrollbar-color: gray transparent;
 }
+
+/* README links take helenhsong.com's soft underline: a faint line that
+   comes up to the text colour on hover. The shared --border token is a
+   light grey meant for white pages, so on the dark lace it's set here. */
+html .ph-readme a {
+  text-decoration-color: rgba(255, 255, 255, 0.4);
+  text-underline-position: from-font;
+  transition: text-decoration-color 0.15s ease;
+}
+
+html .ph-readme a:hover {
+  text-decoration-color: currentColor;
+}

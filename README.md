@@ -1,6 +1,8 @@
 # Stitchwriter
 
-Type anything and watch it become a growing piece of cross-stitch embroidery.
+Type anything and watch your words get stitched into fabric, one square at a time.
+
+Stitchwriter was inspired by two projects.
 
 [Tobie Tse](https://www.instagram.com/p/DZaR7Jtm5-W/) makes artworks in filet crochet, an old lace technique where a grid of open mesh is filled in square by square to draw pictures and words. Watching her video got me hooked on the idea of writing with thread.
 
