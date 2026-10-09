@@ -894,17 +894,17 @@ function frayPaths(layout, selection, geometry, toGrid) {
         if (filled.has(`${gx + sx},${gy + sy}`)) return
         for (let strand = 0; strand < 2; strand++) {
           const seed = side + strand * 4
-          if (hash(gx * 3.1 + seed, gy * 1.7 - seed) > (strand ? 0.24 : 0.7)) continue
+          if (hash(gx * 3.1 + seed, gy * 1.7 - seed) > (strand ? 0.08 : 0.5)) continue
           const along = hash(gx + seed * 5.3, gy * 2.9)
           const x = (gx + 0.5 + sx * 0.5 + (sy ? along - 0.5 : 0)) * cell
           const y = (gy + 0.5 + sy * 0.5 + (sx ? along - 0.5 : 0)) * cell
           const angle = Math.atan2(sy, sx) + (hash(gy * 7.7, gx + seed) - 0.5) * 1.5
-          const length = cell * (1 + hash(gx * 1.3, gy * 5.1 + seed) * 2.8)
+          const length = cell * (0.8 + hash(gx * 1.3, gy * 5.1 + seed) * 1.6)
           hair(x, y, angle, length, (hash(seed * 9.1 + gx, gy) - 0.5) * 2)
         }
       })
       // ...and a few short ones lift off the face of the stitches.
-      if (hash(gx * 0.7 + 11, gy * 1.9) < 0.18) {
+      if (hash(gx * 0.7 + 11, gy * 1.9) < 0.06) {
         const angle = hash(gx * 4.3, gy * 0.9 + 3) * Math.PI * 2
         hair((gx + 0.5) * cell, (gy + 0.5) * cell, angle, cell * (0.8 + hash(gy, gx * 2.2) * 0.9), 0.8)
       }
@@ -1166,9 +1166,9 @@ export class LaceRenderer {
       const { lineWidth } = geometry
       context.save()
       context.globalAlpha = this.writing * this.fray
-      context.fillStyle = 'rgba(255, 255, 255, 0.05)'
+      context.fillStyle = 'rgba(255, 255, 255, 0.03)'
       context.fill(this.frayed.halo)
-      context.fillStyle = 'rgba(255, 255, 255, 0.08)'
+      context.fillStyle = 'rgba(255, 255, 255, 0.05)'
       context.fill(this.frayed.fuzz)
       context.lineCap = 'round'
       context.strokeStyle = 'rgba(0, 0, 0, 0.45)'
