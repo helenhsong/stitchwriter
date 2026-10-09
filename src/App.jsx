@@ -308,9 +308,10 @@ function App() {
           caretIndex: caret,
           selection,
           reducedMotion,
+          face: stitchFace,
         }
       : null
-  }, [caret, caretCell, held, layout, maxScroll, pieceGeometry, placeholder, reducedMotion, selection, text])
+  }, [caret, caretCell, held, layout, maxScroll, pieceGeometry, placeholder, reducedMotion, selection, stitchFace, text])
 
   useEffect(() => {
     if (!fontReady || !canvasRef.current) return undefined

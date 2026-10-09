@@ -689,11 +689,13 @@ function parseChart(rows) {
 const DIAMOND = parseChart(['.X.', 'X.X', '.X.'])
 const TRIO = parseChart(['X.X', '.X.'])
 
-// The seal over the writing: "type anything" stitched in the charted
-// script, with fairy dust scattered round about.
-function sealCells(geometry) {
+// The seal over the writing: "type anything" stitched in the writing's
+// typeface, with fairy dust scattered round about. It is worked one stitch
+// per cell: a pixel face at its own pixel size, so each of its pixels is a
+// stitch, anything else at the charted em.
+function sealCells(geometry, face) {
   const { centre, top } = geometry.seal
-  const em = CHART_EM
+  const em = face?.grid ? face.grid : CHART_EM
   const seen = new Set()
   const cells = []
   const mark = (x, y) => {
@@ -708,19 +710,24 @@ function sealCells(geometry) {
     for (const [dx, dy] of chart.cells) mark(x + dx, y + dy)
   }
   const glyphs = Array.from('type anything').map((character) =>
-    /\s/.test(character) ? null : getGlyph(character, em),
+    /\s/.test(character) ? null : getGlyph(character, em, face),
   )
-  const space = 4
+  const space = Math.round(em * (face?.grid ? 0.3 : 0.4))
   const width = glyphs.reduce((sum, glyph) => sum + (glyph ? glyph.advance : space), 0)
   const left = Math.round(centre - width / 2)
-  const baseline = top + 15
+  // Keep the words centred where the charted script sat, however tall the
+  // face is.
+  const rows = glyphs.flatMap((glyph) => (glyph ? glyph.cells.map(([, dy]) => dy) : []))
+  const inkTop = Math.min(...rows)
+  const inkBottom = Math.max(...rows)
+  const baseline = top + 13 - Math.round((inkTop + inkBottom) / 2)
   let x = left
   for (const glyph of glyphs) {
     if (!glyph) {
       x += space
       continue
     }
-    for (const [dx, dy] of glyph.cells) mark(x + dx, baseline + dy)
+    for (const [dx, dy] of glyph.cells) mark(Math.round(x) + dx, baseline + dy)
     x += glyph.advance
   }
 
@@ -732,7 +739,9 @@ function sealCells(geometry) {
   ]
   for (const [i, [across, down]] of dust.entries()) {
     const dx = centre + across * (width / 2 + 6)
-    const dy = baseline + down
+    // Dust above the words keeps its distance from their tops, and dust
+    // below from their bottoms (the charted script's run from -7 to 3).
+    const dy = down < 0 ? baseline + inkTop + 7 + down : baseline + inkBottom - 3 + down
     if (i % 3 === 0) stamp(DIAMOND, dx - 1, dy - 1)
     else if (i % 5 === 1) stamp(TRIO, dx - 1, dy)
     else mark(dx, dy)
@@ -1100,10 +1109,10 @@ export class LaceRenderer {
 
     // The border and ornaments grow with the writing, so they live in
     // document space and scroll with it.
-    const ornamentKey = `${pieceGeometry.frame.bottom}`
+    const ornamentKey = `${pieceGeometry.frame.bottom}:${scene.face?.family ?? ''}:${scene.face?.style ?? ''}`
     if (ornamentKey !== this.ornamentKey) {
       this.ornaments = [
-        ...sealCells(pieceGeometry),
+        ...sealCells(pieceGeometry, scene.face),
       ]
       this.ornamentKey = ornamentKey
     }
