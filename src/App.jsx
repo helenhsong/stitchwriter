@@ -146,8 +146,8 @@ function App() {
   const readmeOpen = useReadmeOpen()
 
   const geometry = useMemo(
-    () => createGeometry(viewport.width, viewport.height),
-    [viewport.width, viewport.height],
+    () => createGeometry(viewport.width, viewport.height, stitchFace),
+    [stitchFace, viewport.width, viewport.height],
   )
   const placeholder = !text
   const layout = useMemo(

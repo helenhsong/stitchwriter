@@ -156,14 +156,16 @@ function hash(x, y) {
   return value - Math.floor(value)
 }
 
-export function createGeometry(viewportWidth, viewportHeight) {
+export function createGeometry(viewportWidth, viewportHeight, face) {
   const compact = viewportWidth < 560
   // A fine, tight mesh, the same at every window size.
   const cell = MESH_CELL
   // Letters are charted at one stitch per cell on phones and two on wider
   // screens; em sizes everything else (fallback punctuation, spacing, the
   // caret) to match them.
-  const em = CHART_EM * (compact ? 1 : 2)
+  // A pixel face can't be worked smaller than one stitch per pixel, so on
+  // phones the writing grows to the face's own pixel size.
+  const em = compact && face?.grid > CHART_EM * 1.3 ? face.grid : CHART_EM * (compact ? 1 : 2)
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
   // The seal: an embroidered title with fairy dust at the top
@@ -765,6 +767,25 @@ function soften(layer, amount) {
   context.restore()
 }
 
+// Lift the stitching off the lace with a very faint shadow, down and to
+// the right, as if the thread stands a little proud of the mesh.
+function raise(layer, ratio) {
+  const { canvas, context } = layer
+  const copy = document.createElement('canvas')
+  copy.width = canvas.width
+  copy.height = canvas.height
+  copy.getContext('2d').drawImage(canvas, 0, 0)
+  context.save()
+  context.setTransform(1, 0, 0, 1, 0, 0)
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.shadowColor = 'rgba(0, 0, 0, 0.32)'
+  context.shadowBlur = 1.5 * ratio
+  context.shadowOffsetX = 0.6 * ratio
+  context.shadowOffsetY = 1 * ratio
+  context.drawImage(copy, 0, 0)
+  context.restore()
+}
+
 // Sample a cubic Bézier into points.
 function bezierPoints(p0, p1, p2, p3, count) {
   const points = []
@@ -1139,6 +1160,7 @@ export class LaceRenderer {
       }
     }
     soften(this.textLayer, this.ratio * 0.3)
+    raise(this.textLayer, this.ratio)
   }
 
   // Draw a deleted letter `pulled` of the way out. Pulling the loose end
