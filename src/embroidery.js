@@ -694,20 +694,25 @@ const CHARTED_INK = 11
 // stitches.
 const DIAMOND = parseChart(['.X.', 'X.X', '.X.'])
 const TRIO = parseChart(['X.X', '.X.'])
-// A filet rose in a pair of leaves, as worked round the edge of a doily.
-// The leaves reach out to the left; the right-hand spray is mirrored.
+// A filet rose between two hanging leaves, charted from a doily: solid
+// stitching, with the rosebud and the leaf veins drawn in open mesh.
 const SPRAY = parseChart([
-  'XXX.........XXXXX...',
-  'XXXXX.....XXXXXXXXX.',
-  '.XX.XX...XXX.....XXX',
-  '..XXXXX..XX.XXXXX.XX',
-  '....XXXX.XX.X...XX.X',
-  '......XXXXX.X.X..X.X',
-  '....XXXX.XX.X.XXXX.X',
-  '..XXXXX..XXX.X....XX',
-  '.XX.XX....XXX.XXXXX.',
-  'XXXXX......XXXXXXX..',
-  'XXX..........XXX....',
+  '............XXXXXXX............',
+  '..........XXXXXXXXXXX..........',
+  '.........XXXXX...XXXXX.........',
+  '.........XXXX.XXX.XXXX.........',
+  '.........XXX.XXXXX.XXX.........',
+  '.........XX.XXXXXXX.XX.........',
+  '.........XX.X.....X.XX.........',
+  '.......XXXX.XXXXXXX.XXXX.......',
+  '.....XXXXXXX.XXXXX.XXXXXXX.....',
+  '...XXXXXXXXX.XXXXX.XXXXXXXXX...',
+  '..XXX.XXXXXXX.XXX.XXXXXXX.XXX..',
+  '.XXX.XXX.XXXXX.X.XXXXX.XXX.XXX.',
+  'XXX.XXX..XXXXXX.XXXXXX..XXX.XXX',
+  'XX.XXX....XXXXXXXXXXX....XXX.XX',
+  'X.XXX.......XXXXXXX.......XXX.X',
+  'XXX.........................XXX',
 ])
 
 // The seal over the writing: "type anything" stitched in the writing's
@@ -756,19 +761,18 @@ function sealCells(geometry, face) {
   // A spray of rose and leaves at each end of the words,
   // charted at the words' own stitch size.
   const unit = Math.max(1, Math.round((inkBottom - inkTop + 1) / CHARTED_INK))
-  const motif = (chart, x, y, mirror) => {
+  const motif = (chart, x, y) => {
     for (const [dx, dy] of chart.cells) {
-      const cx = mirror ? chart.width - 1 - dx : dx
       for (let i = 0; i < unit; i += 1) {
-        for (let j = 0; j < unit; j += 1) mark(x + cx * unit + i, y + dy * unit + j)
+        for (let j = 0; j < unit; j += 1) mark(x + dx * unit + i, y + dy * unit + j)
       }
     }
   }
   const middle = baseline + Math.round((inkTop + inkBottom) / 2)
   const gap = 3 * unit
   const sprayTop = middle - Math.floor((SPRAY.height * unit) / 2)
-  motif(SPRAY, left - gap - SPRAY.width * unit, sprayTop, false)
-  motif(SPRAY, left + width + gap, sprayTop, true)
+  motif(SPRAY, left - gap - SPRAY.width * unit, sprayTop)
+  motif(SPRAY, left + width + gap, sprayTop)
 
   // Fairy dust drifting round the words.
   const dust = [
