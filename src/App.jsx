@@ -73,7 +73,9 @@ function useFontReady() {
       ? document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`)
       : Promise.resolve()
 
-    Promise.race([fallback, timeout]).then(() => {
+    // The header's fonts too, so its labels don't swap in after the fade.
+    const fonts = document.fonts ? Promise.all([fallback, document.fonts.ready]) : fallback
+    Promise.race([fonts, timeout]).then(() => {
       if (active) setReady(true)
     })
 
@@ -331,6 +333,9 @@ function App() {
         scene.hideWriting =
           document.querySelector('.ph-project-header a[aria-expanded]')?.getAttribute('aria-expanded') === 'true'
         renderer.draw(scene, now)
+        // The page fades in as one piece once the lace has a first frame,
+        // instead of the header and the lace popping in one after another.
+        document.documentElement.dataset.laceReady = ''
       }
       if (!reducedMotion) frame = requestAnimationFrame(paint)
     }
