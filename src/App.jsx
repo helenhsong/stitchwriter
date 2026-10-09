@@ -567,7 +567,7 @@ function App() {
         disabled={!text}
         aria-live="polite"
       >
-        {copied ? 'Copied' : 'Copy text'}
+        {copied ? 'Copied' : 'Copy'}
       </button>
       <canvas
         ref={canvasRef}
