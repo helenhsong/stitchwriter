@@ -765,6 +765,25 @@ function soften(layer, amount) {
   context.restore()
 }
 
+// Lift the stitching off the lace with a very faint shadow, down and to
+// the right, as if the thread stands a little proud of the mesh.
+function raise(layer, ratio) {
+  const { canvas, context } = layer
+  const copy = document.createElement('canvas')
+  copy.width = canvas.width
+  copy.height = canvas.height
+  copy.getContext('2d').drawImage(canvas, 0, 0)
+  context.save()
+  context.setTransform(1, 0, 0, 1, 0, 0)
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.shadowColor = 'rgba(0, 0, 0, 0.32)'
+  context.shadowBlur = 1.5 * ratio
+  context.shadowOffsetX = 0.6 * ratio
+  context.shadowOffsetY = 1 * ratio
+  context.drawImage(copy, 0, 0)
+  context.restore()
+}
+
 // Sample a cubic Bézier into points.
 function bezierPoints(p0, p1, p2, p3, count) {
   const points = []
@@ -1139,6 +1158,7 @@ export class LaceRenderer {
       }
     }
     soften(this.textLayer, this.ratio * 0.3)
+    raise(this.textLayer, this.ratio)
   }
 
   // Draw a deleted letter `pulled` of the way out. Pulling the loose end
