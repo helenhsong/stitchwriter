@@ -26,7 +26,10 @@ export async function loadKitFace() {
   })
   document.head.append(link)
   if (!(await loaded)) return null
-  const faces = [...document.fonts].filter((face) => !before.has(face.family))
+  const added = [...document.fonts].filter((face) => !before.has(face.family))
+  // The kit's typeface for the writing is Argent Pixel CF.
+  const argent = added.filter((face) => /argent/i.test(face.family))
+  const faces = argent.length ? argent : added
   // The lightest upright weight the kit offers (a variable face's weight
   // is a range; its low end is used).
   const weightOf = (item) => (item.weight === 'normal' ? 400 : item.weight === 'bold' ? 700 : parseFloat(item.weight))
@@ -40,13 +43,80 @@ export async function loadKitFace() {
   const style = `${face.style === 'normal' ? '' : `${face.style} `}${weightOf(face)}`
   try {
     const ready = await document.fonts.load(`${style} 72px ${family}`)
+    if (!ready.length) return null
     // Outlines are rasterized as drawn, with no thickening, so the face
     // keeps the weight it has on Adobe's site.
-    return ready.length ? { family, style, thicken: 0 } : null
+    return { family, style, thicken: 0, ...findPixelGrid(family, style) }
   } catch {
     return null
   }
 }
+
+// A pixel face is drawn on a square grid of its own. Find how many of its
+// pixels make one em and where that grid sits, so each of its pixels can be
+// worked as whole stitches instead of being resampled across cell edges.
+// Returns {} for a face that is not on a grid.
+function findPixelGrid(family, style) {
+  const size = 480
+  const canvas = document.createElement('canvas')
+  canvas.width = size * 6
+  canvas.height = Math.ceil(size * 1.6)
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  const baseline = Math.round(size * 1.2)
+  context.font = `${style} ${size}px ${family}`
+  context.fillStyle = '#fff'
+  context.fillText('HOMBgahxyz', 0, baseline)
+  const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height)
+  const inked = (x, y) => data[(y * width + x) * 4 + 3] >= 128
+  // Every place the ink starts or stops, across rows and down columns,
+  // measured from the drawing origin and the baseline.
+  const edges = { x: [], y: [] }
+  for (let y = 0; y < height; y += 3) {
+    for (let x = 1; x < width; x += 1) if (inked(x, y) !== inked(x - 1, y)) edges.x.push(x)
+  }
+  for (let x = 0; x < width; x += 3) {
+    for (let y = 1; y < height; y += 1) if (inked(x, y) !== inked(x, y - 1)) edges.y.push(y - baseline)
+  }
+  if (edges.x.length < 40) return {}
+  // How tightly the edges fall on a grid of this pitch, and its phase.
+  const fit = (positions, pitch) => {
+    let cos = 0
+    let sin = 0
+    for (const position of positions) {
+      const angle = (2 * Math.PI * position) / pitch
+      cos += Math.cos(angle)
+      sin += Math.sin(angle)
+    }
+    // The nearest offset of the grid from the origin, in pitches.
+    const phase = Math.atan2(sin, cos) / (2 * Math.PI)
+    return { strength: Math.hypot(cos, sin) / positions.length, phase: phase - Math.round(phase) }
+  }
+  // The coarsest grid that every edge falls on; a finer one (a multiple of
+  // it) fits too, a coarser one does not.
+  for (let grid = 6; grid <= 48; grid += 1) {
+    const pitch = size / grid
+    const across = fit(edges.x, pitch)
+    const down = fit(edges.y, pitch)
+    if (across.strength > 0.9 && down.strength > 0.9) {
+      return { grid, phase: { x: across.phase, y: down.phase } }
+    }
+  }
+  return {}
+}
+
+// How many stitches across one pixel of a pixel face is worked at this em,
+// or 0 to draw the face freely.
+function gridScale(em, face) {
+  if (!face?.grid || face.grid > em * 1.3) return 0
+  return Math.max(1, Math.round(em / face.grid))
+}
+
+// The face's size in cells at this em.
+function faceSize(em, face) {
+  const scale = gridScale(em, face)
+  return scale ? scale * face.grid : em
+}
+
 export const HEADER_HEIGHT = 66
 
 const VELVET = '#0a0a0a'
@@ -138,7 +208,7 @@ function getMeasureContext(em, face) {
     measureContext = document.createElement('canvas').getContext('2d')
   }
   measureContext.font = face
-    ? `${face.style} ${em * SUBSAMPLE}px ${face.family}`
+    ? `${face.style} ${faceSize(em, face) * SUBSAMPLE}px ${face.family}`
     : `${STITCH_FONT_STYLE} ${em * SUBSAMPLE}px ${STITCH_FONT}`
   return measureContext
 }
@@ -146,8 +216,7 @@ function getMeasureContext(em, face) {
 // Rasterize one character to filet cells. Cells are relative to the glyph's
 // origin column and baseline row, and are ordered the way they are worked:
 // row by row, turning back at the end of each row like crochet.
-export function getGlyph(character, em, typedFace) {
-  const face = typedFace && (!typedFace.covers || typedFace.covers.test(character)) ? typedFace : null
+export function getGlyph(character, em, face) {
   const cacheKey = `${em}:${face?.family ?? ''}:${character}`
   const cached = glyphCache.get(cacheKey)
   if (cached) return cached
@@ -174,10 +243,21 @@ export function getGlyph(character, em, typedFace) {
   }
 
   const measure = getMeasureContext(em, face)
-  const advance = measure.measureText(character).width / SUBSAMPLE
-  const pad = Math.ceil(em * 0.5)
-  const ascent = Math.ceil(em * 1.05)
-  const descent = Math.ceil(em * 0.45)
+  const scale = gridScale(em, face)
+  const size = faceSize(em, face)
+  // On a pixel face the advance is a whole number of its pixels.
+  const rawAdvance = measure.measureText(character).width / SUBSAMPLE
+  const advance = scale ? Math.round(rawAdvance / scale) * scale : rawAdvance
+  const pad = Math.ceil(size * 0.5)
+  const ascent = Math.ceil(size * 1.05)
+  const descent = Math.ceil(size * 0.45)
+  // Slide a pixel face so its pixel edges land on cell edges.
+  const shift = scale
+    ? {
+        x: -Math.round(face.phase.x * scale * SUBSAMPLE),
+        y: -Math.round(face.phase.y * scale * SUBSAMPLE),
+      }
+    : { x: 0, y: 0 }
   const widthCells = Math.ceil(advance) + pad * 2
   const heightCells = ascent + descent
   const canvas = document.createElement('canvas')
@@ -187,12 +267,15 @@ export function getGlyph(character, em, typedFace) {
   context.font = measure.font
   context.fillStyle = '#fff'
   context.textBaseline = 'alphabetic'
-  context.fillText(character, pad * SUBSAMPLE, ascent * SUBSAMPLE)
+  context.fillText(character, pad * SUBSAMPLE + shift.x, ascent * SUBSAMPLE + shift.y)
   // Thicken hairlines so thin serifs and joins survive at filet resolution.
   context.strokeStyle = '#fff'
   context.lineJoin = 'round'
-  context.lineWidth = SUBSAMPLE * (face?.thicken ?? THICKEN)
-  context.strokeText(character, pad * SUBSAMPLE, ascent * SUBSAMPLE)
+  const thicken = face?.thicken ?? THICKEN
+  context.lineWidth = SUBSAMPLE * thicken
+  if (thicken > 0) {
+    context.strokeText(character, pad * SUBSAMPLE + shift.x, ascent * SUBSAMPLE + shift.y)
+  }
 
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
   const rowsOfCells = []
@@ -208,7 +291,7 @@ export function getGlyph(character, em, typedFace) {
           covered += pixels[offset + sx * 4 + 3] / 255
         }
       }
-      if (covered / area >= (face?.coverage ?? COVERAGE)) row.push([cx - pad, cy - ascent])
+      if (covered / area >= COVERAGE) row.push([cx - pad, cy - ascent])
     }
     if (row.length) rowsOfCells.push(row)
   }
