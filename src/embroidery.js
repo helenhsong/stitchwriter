@@ -168,7 +168,7 @@ export function createGeometry(viewportWidth, viewportHeight, face) {
   const em = compact && face?.grid > CHART_EM * 1.3 ? face.grid : CHART_EM * (compact ? 1 : 2)
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
-  // The seal: an embroidered title with fairy dust at the top
+  // The seal: an embroidered title between rose borders at the top
   // of the page, between the header links on wide screens. It is charted
   // one stitch per cell, smaller still on phones.
   const centre = Math.floor(Math.floor(viewportWidth / cell) / 2)
@@ -690,16 +690,31 @@ function parseChart(rows) {
 // How many rows the charted script's ink spans, from -7 to 3.
 const CHARTED_INK = 11
 
-// Fairy dust: open diamonds of four stitches, little trios and lone
-// stitches.
-const DIAMOND = parseChart(['.X.', 'X.X', '.X.'])
-const TRIO = parseChart(['X.X', '.X.'])
-// One scallop of a doily's edge, worked solid with an eyelet, and the
-// width of one repeat. Charted pointing up; the lower edge is flipped.
-const SCALLOP = parseChart(['..XXX...', '.XX.XX..', 'XXXXXXX.', 'XXXXXXXX'])
+// One repeat of a filet border of roses and leaves, copied stitch for
+// stitch from a crochet chart. Repeats run end to end, left to right.
+const ROSE_BORDER = parseChart([
+  '.........................X....',
+  '.........................XX...',
+  '.....XX..................XX...',
+  '..XXX.XXX............XXX..X...',
+  '.X.XXX.XX.............XXX..X..',
+  '.X..XX.X.................XXXX.',
+  '.XXXXX.XXX.........XX..XX....X',
+  'X.XXX.XXXX......XX.XXX.X.XX...',
+  'XX...X.XX..XX...XXXXXX...XXX..',
+  '.XXXXXX...XXX..XX...X.XX..XX..',
+  '.XX.XXX.X.XX...X.XXX.XXXX.....',
+  '....XX..XX....X.XXXXX.XXX.....',
+  '..........XXXX..X..XX.X.......',
+  '.......XXX..X...X.XXX.XX......',
+  '......XXX..X.....XXX.XXX......',
+  '..........XX........XX........',
+  '..........XX..................',
+  '..........X...................',
+])
 
 // The seal over the writing: "type anything" stitched in the writing's
-// typeface, with fairy dust scattered round about. It is worked one stitch
+// typeface, between borders of roses and leaves. It is worked one stitch
 // per cell: a pixel face at its own pixel size, so each of its pixels is a
 // stitch, anything else at the charted em. A face taller than the
 // charted script is drawn smaller, so the title keeps the charted size.
@@ -715,9 +730,6 @@ function sealCells(geometry, face) {
     if (seen.has(key)) return
     seen.add(key)
     cells.push([gx, gy])
-  }
-  const stamp = (chart, x, y) => {
-    for (const [dx, dy] of chart.cells) mark(x + dx, y + dy)
   }
   const glyphs = Array.from('type anything').map((character) =>
     /\s/.test(character) ? null : getGlyph(character, em, face),
@@ -741,44 +753,20 @@ function sealCells(geometry, face) {
     x += glyph.advance
   }
 
-  // A scalloped edge above and below the words, as round a doily, charted
-  // at the words' own stitch size and clear of the dust.
-  const unit = Math.max(1, Math.round((inkBottom - inkTop + 1) / CHARTED_INK))
-  const repeat = SCALLOP.width * unit
-  const count = Math.ceil((width + 24) / repeat) | 1
-  const edgeLeft = Math.round(centre - (count * repeat) / 2)
-  const edge = (y, flip) => {
+  // A border of roses and leaves above and below the words, worked one
+  // stitch per pixel of the words' face, in whole repeats wide enough to
+  // run past both ends.
+  const repeat = ROSE_BORDER.width
+  const count = Math.ceil((width + 24) / repeat)
+  const borderLeft = Math.round(centre - (count * repeat) / 2)
+  const border = (y) => {
     for (let k = 0; k < count; k += 1) {
-      for (const [dx, dy] of SCALLOP.cells) {
-        // The last repeat closes the band without starting another scallop.
-        if (k === count - 1 && dx === SCALLOP.width - 1) continue
-        const row = flip ? SCALLOP.height - 1 - dy : dy
-        for (let i = 0; i < unit; i += 1) {
-          for (let j = 0; j < unit; j += 1) {
-            mark(edgeLeft + k * repeat + dx * unit + i, y + row * unit + j)
-          }
-        }
-      }
+      for (const [dx, dy] of ROSE_BORDER.cells) mark(borderLeft + k * repeat + dx, y + dy)
     }
   }
-  edge(baseline + inkTop - 9 - SCALLOP.height * unit, false)
-  edge(baseline + inkBottom + 12, true)
-
-  // Fairy dust drifting round the words.
-  const dust = [
-    [-0.95, -12], [-0.62, -12], [-0.2, -13], [0.12, -12],
-    [0.48, -13], [0.8, -11], [-0.78, 9], [-0.05, 11],
-    [0.42, 10], [0.9, 8],
-  ]
-  for (const [i, [across, down]] of dust.entries()) {
-    const dx = centre + across * (width / 2 + 6)
-    // Dust above the words keeps its distance from their tops, and dust
-    // below from their bottoms (the charted script's run from -7 to 3).
-    const dy = down < 0 ? baseline + inkTop + 7 + down : baseline + inkBottom - 3 + down
-    if (i % 3 === 0) stamp(DIAMOND, dx - 1, dy - 1)
-    else if (i % 5 === 1) stamp(TRIO, dx - 1, dy)
-    else mark(dx, dy)
-  }
+  const gap = 4
+  border(baseline + inkTop - gap - ROSE_BORDER.height)
+  border(baseline + inkBottom + gap + 1)
   return { cells, scale: Math.min(1, CHARTED_INK / (inkBottom - inkTop + 1)) }
 }
 
