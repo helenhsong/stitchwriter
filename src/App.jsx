@@ -274,14 +274,16 @@ function App() {
   }, [caret, caretCell, layout, maxScroll, pieceGeometry, placeholder, reducedMotion])
 
   useEffect(() => {
-    if (!fontReady || readmeOpen || !canvasRef.current) return undefined
+    if (!fontReady || !canvasRef.current) return undefined
     const renderer = new LaceRenderer(canvasRef.current)
     renderer.resize(viewport.width, viewport.height, geometry)
     rendererRef.current = renderer
-  }, [fontReady, geometry, readmeOpen, viewport.height, viewport.width])
+  }, [fontReady, geometry, viewport.height, viewport.width])
 
   useEffect(() => {
-    if (!fontReady || readmeOpen) return undefined
+    // The lace keeps painting under the README veil, so it is all there to
+    // fade back in when README closes.
+    if (!fontReady) return undefined
     let frame = 0
 
     const paint = (now) => {
@@ -291,8 +293,8 @@ function App() {
         scene.births = birthsRef.current
         scene.ghosts = ghostsRef.current
         // Read the scroll position every frame so the lace moves with the
-        // page smoothly instead of in steps.
-        scene.scrollY = window.scrollY
+        // page smoothly instead of in steps. Scrolling README leaves it be.
+        scene.scrollY = readmeOpen ? (scene.scrollY ?? 0) : (mainRef.current?.scrollTop ?? 0)
         renderer.draw(scene, now)
       }
       if (!reducedMotion) frame = requestAnimationFrame(paint)
@@ -305,10 +307,11 @@ function App() {
       cancelAnimationFrame(frame)
       frame = requestAnimationFrame(paint)
     }
-    window.addEventListener('scroll', onScroll, { passive: true })
+    const scroller = mainRef.current
+    scroller?.addEventListener('scroll', onScroll, { passive: true })
     return () => {
       cancelAnimationFrame(frame)
-      window.removeEventListener('scroll', onScroll)
+      scroller?.removeEventListener('scroll', onScroll)
     }
   }, [caret, fontReady, geometry, readmeOpen, reducedMotion, text])
 
@@ -336,7 +339,9 @@ function App() {
   // the page can be scrolled freely.
   useEffect(() => {
     if (!layout || placeholder) return
-    const scrollRows = window.scrollY / geometry.cell
+    const scroller = mainRef.current
+    if (!scroller) return
+    const scrollRows = scroller.scrollTop / geometry.cell
     const caretBottom =
       geometry.textTop +
       geometry.baselineOffset +
@@ -347,13 +352,13 @@ function App() {
     if (caretBottom - scrollRows > geometry.rows - 3) {
       // On the last line, show the whole bottom of the piece.
       const lastLine = caretCell.line === layout.lines - 1
-      window.scrollTo({
+      scroller.scrollTo({
         top: lastLine
-          ? document.documentElement.scrollHeight
+          ? scroller.scrollHeight
           : (caretBottom - geometry.rows + 3) * geometry.cell,
       })
     } else if (caretTop - scrollRows < headerRows + 1) {
-      window.scrollTo({ top: Math.max(0, caretTop - headerRows - 1) * geometry.cell })
+      scroller.scrollTo({ top: Math.max(0, caretTop - headerRows - 1) * geometry.cell })
     }
   }, [caretCell.line, geometry, layout, placeholder])
 
@@ -395,7 +400,7 @@ function App() {
   // Map a pointer position to an insertion point in the writing, if any.
   const hitTest = (clientX, clientY) => {
     if (!layout || placeholder) return null
-    const scrollRows = Math.min(window.scrollY, maxScroll) / geometry.cell
+    const scrollRows = Math.min(mainRef.current?.scrollTop ?? 0, maxScroll) / geometry.cell
     const col = clientX / geometry.cell - geometry.textLeft
     const row = clientY / geometry.cell - geometry.textTop + scrollRows
     const x = clientX / geometry.cell
@@ -445,42 +450,45 @@ function App() {
       >
         {copied ? 'Copied' : 'Copy text'}
       </button>
+      <canvas
+        ref={canvasRef}
+        className="lace-canvas"
+        role="img"
+        aria-label={
+          text
+            ? `Filet-lace text: ${text.slice(0, 180)}`
+            : 'An empty piece of filet lace'
+        }
+      />
+      <textarea
+        ref={inputRef}
+        className="lace-input"
+        value={text}
+        onChange={(event) => {
+          setText(event.target.value)
+          syncCaret(event.target)
+        }}
+        onSelect={(event) => syncCaret(event.currentTarget)}
+        aria-label="Text to stitch"
+        autoCapitalize="sentences"
+        autoFocus
+        maxLength={12000}
+        spellCheck={false}
+      />
+      {/* The page scrolls in this full-window layer over the lace, so its
+          thin scrollbar floats on the lace instead of taking a strip of the
+          window or pushing anything aside. */}
       <main
         ref={mainRef}
         className="lace-page"
         aria-busy={!fontReady}
-        style={{ height: `${documentHeight - HEADER_HEIGHT}px` }}
         // Keep focus in the hidden input; clicks only move the insertion
         // point when they land on the writing.
         onMouseDown={(event) => event.preventDefault()}
         onPointerUp={onPointerUp}
         onPointerMove={onPointerMove}
       >
-        <canvas
-          ref={canvasRef}
-          className="lace-canvas"
-          role="img"
-          aria-label={
-            text
-              ? `Filet-lace text: ${text.slice(0, 180)}`
-              : 'An empty piece of filet lace'
-          }
-        />
-        <textarea
-          ref={inputRef}
-          className="lace-input"
-          value={text}
-          onChange={(event) => {
-            setText(event.target.value)
-            syncCaret(event.target)
-          }}
-          onSelect={(event) => syncCaret(event.currentTarget)}
-          aria-label="Text to stitch"
-          autoCapitalize="sentences"
-          autoFocus
-          maxLength={12000}
-          spellCheck={false}
-        />
+        <div style={{ height: `${documentHeight}px` }} />
       </main>
     </>
   )

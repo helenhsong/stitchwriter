@@ -1,6 +1,6 @@
 html {
   scrollbar-width: thin;
-  scrollbar-color: #6b6b67 transparent;
+  scrollbar-color: gray transparent;
 }
 
 html:root {
@@ -25,9 +25,17 @@ body {
   background: var(--project-bg);
 }
 
+/* The page's own scrolling surface: a transparent layer over the whole
+   window, so its thin scrollbar floats over the lace on a clear track. */
 .lace-page {
-  position: relative;
+  position: fixed;
+  z-index: 1;
+  inset: 0;
   display: block;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  scrollbar-width: thin;
   cursor: text;
 }
 
@@ -40,10 +48,24 @@ body {
   display: block;
 }
 
-html[data-ph-open] .lace-page,
-html[data-ph-open] .lace-unstitch,
-html[data-ph-open] .lace-copy {
-  display: none;
+/* While README is open the lace stays put under the header's veil, so it
+   fades out and back in with it, but takes no clicks or scrolling. */
+html[data-ph-open] .lace-page {
+  pointer-events: none;
+}
+
+/* From the moment README is opened the lace and the corner links fade out
+   under its veil, and when it closes they fade gently back in. */
+.lace-canvas,
+.lace-copy,
+.lace-unstitch {
+  transition: opacity 0.5s ease-in-out;
+}
+
+html:has(.ph-project-header a[aria-expanded='true']) :is(.lace-canvas, .lace-copy, .lace-unstitch) {
+  opacity: 0;
+  pointer-events: none;
+  transition-duration: 0.24s;
 }
 
 .lace-input {
