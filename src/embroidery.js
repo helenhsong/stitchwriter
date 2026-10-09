@@ -848,7 +848,7 @@ function dome(layer, ratio, cell) {
   shade.width = canvas.width
   shade.height = canvas.height
   const dark = shade.getContext('2d')
-  dark.fillStyle = 'rgba(52, 50, 46, 0.42)'
+  dark.fillStyle = 'rgba(52, 50, 46, 0.58)'
   dark.fillRect(0, 0, shade.width, shade.height)
   dark.globalCompositeOperation = 'destination-out'
   dark.drawImage(blurred, 0, 0)
@@ -857,7 +857,7 @@ function dome(layer, ratio, cell) {
   // light, as a faint sheen.
   soft.filter = 'none'
   soft.globalCompositeOperation = 'source-in'
-  soft.fillStyle = 'rgba(255, 255, 255, 0.5)'
+  soft.fillStyle = 'rgba(255, 255, 255, 0.68)'
   soft.fillRect(0, 0, blurred.width, blurred.height)
 
   context.save()
