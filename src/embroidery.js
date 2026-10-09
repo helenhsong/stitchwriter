@@ -804,8 +804,8 @@ function twist(layer, ratio, cell, rowOffset) {
   const ply = tile.getContext('2d')
   ply.lineWidth = Math.max(1, period * 0.28)
   for (const [shift, colour] of [
-    [0, 'rgba(70, 70, 66, 0.2)'],
-    [period * 0.45, 'rgba(255, 255, 255, 0.22)'],
+    [0, 'rgba(70, 70, 66, 0.3)'],
+    [period * 0.45, 'rgba(255, 255, 255, 0.32)'],
   ]) {
     ply.strokeStyle = colour
     ply.beginPath()
