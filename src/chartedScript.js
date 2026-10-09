@@ -453,12 +453,13 @@ const LETTERS = {
 
 // Columns between one letter's last stitch and the next letter's first.
 const TRACKING = 1
+export const SPACE_ADVANCE = 3
 
 // Cells relative to the letter's origin column and the baseline row (the
 // baseline row itself is -1, like the rasterized glyphs). The origin is
 // the leftmost stitch above the baseline, so a descender swash can tuck
 // under the letter before it.
-export function chartGlyph([baseline, rows]) {
+function chartGlyph([baseline, rows]) {
   const cells = rows.map((row, y) =>
     [...row].flatMap((mark, x) => (mark === 'X' ? [[x, y - baseline - 1]] : [])),
   )

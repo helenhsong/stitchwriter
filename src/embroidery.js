@@ -2,8 +2,7 @@
 // and text is "stitched" by filling cells solid, the way filet crochet
 // pictures are worked.
 
-import { CHARTED_SCRIPT } from './chartedScript.js'
-import { CHARTED_BLOCK, SPACE_ADVANCE } from './chartedBlock.js'
+import { CHARTED_SCRIPT, SPACE_ADVANCE } from './chartedScript.js'
 
 export const STITCH_FONT = '"Playfair Display", Georgia, serif'
 export const STITCH_FONT_STYLE = 'italic 400'
@@ -106,16 +105,15 @@ function getMeasureContext(em, face) {
 // Rasterize one character to filet cells. Cells are relative to the glyph's
 // origin column and baseline row, and are ordered the way they are worked:
 // row by row, turning back at the end of each row like crochet.
-// The writing uses the upright block alphabet; the seal passes the script.
-export function getGlyph(character, em, face, alphabet = CHARTED_BLOCK) {
-  const cacheKey = `${em}:${face?.family ?? ''}:${alphabet === CHARTED_SCRIPT ? 'script' : 'block'}:${character}`
+export function getGlyph(character, em, face) {
+  const cacheKey = `${em}:${face?.family ?? ''}:${character}`
   const cached = glyphCache.get(cacheKey)
   if (cached) return cached
 
-  // Letters come from a charted alphabet, worked row by row. At a
+  // Letters come from the charted script alphabet, worked row by row. At a
   // larger em each charted stitch becomes a square of cells, keeping its
   // bottom edge on the baseline.
-  const charted = !face && alphabet.get(character)
+  const charted = !face && CHARTED_SCRIPT.get(character)
   if (charted) {
     const scale = Math.max(1, Math.round(em / CHART_EM))
     const rows = charted.rows
@@ -582,7 +580,7 @@ function sealCells(geometry) {
     for (const [dx, dy] of chart.cells) mark(x + dx, y + dy)
   }
   const glyphs = Array.from('type anything').map((character) =>
-    /\s/.test(character) ? null : getGlyph(character, em, undefined, CHARTED_SCRIPT),
+    /\s/.test(character) ? null : getGlyph(character, em),
   )
   const space = 4
   const width = glyphs.reduce((sum, glyph) => sum + (glyph ? glyph.advance : space), 0)
