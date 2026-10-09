@@ -26,6 +26,8 @@ const BLOCK_VARIANTS = 6
 // The mesh pattern repeats every this many rows, so the open lace can
 // scroll smoothly with the page by sliding one painted strip.
 const MESH_PERIOD = 16
+// The "type anything" seal is drawn at this share of the writing's size.
+const SEAL_SCALE = 0.6
 // Mesh thread width as a share of the filled blocks' thread.
 const MESH_THREAD = 0.55
 
@@ -914,9 +916,18 @@ export class LaceRenderer {
       ]
       this.ornamentKey = ornamentKey
     }
+    // The seal is worked finer than the writing: its blocks are drawn at a
+    // smaller scale about its middle, so it sits in the same place.
+    const { centre, top } = pieceGeometry.seal
+    const middle = top + 14
+    context.save()
+    context.translate(centre * cell, (middle - bandStart) * cell)
+    context.scale(SEAL_SCALE, SEAL_SCALE)
+    context.translate(-centre * cell, -(middle - bandStart) * cell)
     for (const [x, y] of this.ornaments) {
       if (inBand(x, y - bandStart)) this.drawBlock(context, x, y - bandStart)
     }
+    context.restore()
 
     for (const item of layout.characters) {
       if (!item.glyph || animating.has(item.index)) continue

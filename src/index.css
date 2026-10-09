@@ -60,8 +60,25 @@ body {
   background: none;
 }
 
+/* Copy text sits in the bottom right corner, in the same type. */
+.lace-copy {
+  position: fixed;
+  z-index: 11;
+  right: 32px;
+  bottom: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.lace-copy:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 @media (max-width: 420px) {
-  .lace-unstitch {
+  .lace-unstitch,
+  .lace-copy {
     right: 20px;
   }
 }
