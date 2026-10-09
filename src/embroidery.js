@@ -6,6 +6,14 @@ import { CHARTED_SCRIPT, SPACE_ADVANCE } from './chartedScript.js'
 
 export const STITCH_FONT = '"Playfair Display", Georgia, serif'
 export const STITCH_FONT_STYLE = 'italic 400'
+// Helen's pixel face for the typed writing (src/index.css loads it). It
+// only has letters, so everything else is stitched in the charted script.
+export const TYPED_FACE = {
+  family: '"Amstir Pixel"',
+  style: 'normal 400',
+  covers: /^[A-Za-z]$/,
+  thicken: 0,
+}
 export const HEADER_HEIGHT = 66
 
 const VELVET = '#0a0a0a'
@@ -105,7 +113,8 @@ function getMeasureContext(em, face) {
 // Rasterize one character to filet cells. Cells are relative to the glyph's
 // origin column and baseline row, and are ordered the way they are worked:
 // row by row, turning back at the end of each row like crochet.
-export function getGlyph(character, em, face) {
+export function getGlyph(character, em, typedFace) {
+  const face = typedFace && (!typedFace.covers || typedFace.covers.test(character)) ? typedFace : null
   const cacheKey = `${em}:${face?.family ?? ''}:${character}`
   const cached = glyphCache.get(cacheKey)
   if (cached) return cached

@@ -15,6 +15,7 @@ import {
   LaceRenderer,
   STITCH_FONT,
   STITCH_FONT_STYLE,
+  TYPED_FACE,
   caretIndexAt,
   caretPosition,
   createGeometry,
@@ -70,7 +71,10 @@ function useFontReady() {
     let active = true
     const timeout = new Promise((resolve) => window.setTimeout(resolve, 1800))
     const fallback = document.fonts
-      ? document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`)
+      ? Promise.all([
+          document.fonts.load(`${STITCH_FONT_STYLE} 72px ${STITCH_FONT}`),
+          document.fonts.load(`${TYPED_FACE.style} 72px ${TYPED_FACE.family}`),
+        ])
       : Promise.resolve()
 
     // The header's fonts too, so its labels don't swap in after the fade.
@@ -147,7 +151,7 @@ function App() {
   )
   const placeholder = !text
   const layout = useMemo(
-    () => (fontReady ? layoutText(text, geometry) : null),
+    () => (fontReady ? layoutText(text, geometry, TYPED_FACE) : null),
     [fontReady, geometry, text],
   )
   // The piece is sized to its writing: it starts one line tall and grows
