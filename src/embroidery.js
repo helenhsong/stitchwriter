@@ -168,11 +168,11 @@ export function createGeometry(viewportWidth, viewportHeight, face) {
   const em = compact && face?.grid > CHART_EM * 1.3 ? face.grid : CHART_EM * (compact ? 1 : 2)
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
-  // The seal: an embroidered title between rose borders at the top
+  // The seal: an embroidered title under a bow and roses at the top
   // of the page, between the header links on wide screens. It is charted
   // one stitch per cell, smaller still on phones.
   const centre = Math.floor(Math.floor(viewportWidth / cell) / 2)
-  const sealTop = Math.round((compact ? 114 : 80) / cell) - 14
+  const sealTop = Math.round((compact ? 114 : 104) / cell) - 14
   // Below the seal, open lace for the writing.
   const across = compact
     ? Math.floor(viewportWidth / cell) - Math.round(48 / cell)
@@ -690,31 +690,57 @@ function parseChart(rows) {
 // How many rows the charted script's ink spans, from -7 to 3.
 const CHARTED_INK = 11
 
-// One repeat of a filet border of roses and leaves, copied stitch for
-// stitch from a crochet chart. Repeats run end to end, left to right.
-const ROSE_BORDER = parseChart([
-  '.........................X....',
-  '.........................XX...',
-  '.....XX..................XX...',
-  '..XXX.XXX............XXX..X...',
-  '.X.XXX.XX.............XXX..X..',
-  '.X..XX.X.................XXXX.',
-  '.XXXXX.XXX.........XX..XX....X',
-  'X.XXX.XXXX......XX.XXX.X.XX...',
-  'XX...X.XX..XX...XXXXXX...XXX..',
-  '.XXXXXX...XXX..XX...X.XX..XX..',
-  '.XX.XXX.X.XX...X.XXX.XXXX.....',
-  '....XX..XX....X.XXXXX.XXX.....',
-  '..........XXXX..X..XX.X.......',
-  '.......XXX..X...X.XXX.XX......',
-  '......XXX..X.....XXX.XXX......',
-  '..........XX........XX........',
-  '..........XX..................',
-  '..........X...................',
+// A bow tied between two sprays of roses, copied stitch for stitch from a
+// filet crochet chart.
+const BOW = parseChart([
+  '.........................XXX......................XXX.........................',
+  '........................XXXXX....................XXXXX........................',
+  '........................X..XXX..................XXX..X........................',
+  '.......................X....XXX................XXX....X.......................',
+  '......................XX....XXXX..............XXXX....XX......................',
+  '......................XX.......XX............XX.......XX......................',
+  '......................XXX.......XX....XX....XX.......XXX......................',
+  '......................XXX........XXX.X..X.XXX........XXX......................',
+  '......................XXXXXX........XX..XX........XXXXXX......................',
+  '.......................XXXXXXXXXXXX.XX..XX.XXXXXXXXXXXX.......................',
+  '........................XXXXXXXX....XX..XX....XXXXXXXX........................',
+  '.......XXX.......................XX..X..X..XX.......................XXX.......',
+  '...XX.XXXXX..................XXXXX....XX....XXXXX..................XXXXX.XX...',
+  '........XXX................XXX..................XXX................XXX.....X..',
+  '.X..XX....................XXX.........XX.........XXX................X..XXX..X.',
+  '.X.X...XX.XXX............XXX..........XX..........XXX............XXX.XX...X.X.',
+  '...X....X.XXXX..........XXX..........X..X.......X..XXX..........XXXX.X.X..X...',
+  '.X.XXXX.X.XXXX..X......XXX...XXXX....X..X....XXXX...XXX......X..XXXX.X.XXXX.X.',
+  'XX.XXXXXX.XXXX..XX.....XXX....XXXX...X..X...XXXX....XXX.....XX..XXXX.XXXXXX.XX',
+  'XXX.XXXX.XXXXX..XXX....XXXX....XXXX......X.XXXX....XXXX....XXX..XXXX..XXXX.XXX',
+  'XXX.....X.XXX..XXXX.....XXXX.......XX....XX.......XXXX.....XXXX..XXX......XXXX',
+  '.XX.XXXXXX.....XXXX......XXX........X....X........XXX......XXXX.....XXXXXX.XX.',
+  '....XXXXXX.XX..XXX........XX.......XX....XX.......XX........XXX..XX.XXXXXX....',
+  '....XXXXXX...XX.X..XXX....XX......X.X....X.X......XX....XXX..X.XX...XXXXXX....',
+  '.....XXXX......XX.XXXXX...X......XX..X..X..XX......X...XXXXX.XX......XXXX.....',
+  '.................XXXXXXXXX......XXX..X..X..XXX......XXXXXXXXX.................',
+  '................XXX........X....XXX...XX...XXX....X........XXX................',
+  '...XXXX............X..XX...X....XX....XX....XX....X...XX..X............XXXX...',
+  '....XXXX....XX.....X....X.XXX...X............X...XXX.X....X.....XX....XXXX....',
+  '.....XXXX..X....XX..X..XX.XXX....................XXX.XX..X..XX....XX.XXXX.....',
+  '.................XX..X.XXXXXX....................XXXXXX.X..XX.................',
+  '..........X.......XX.X.XXXXXX....................XXXXXX.X.XX.......X..........',
+  '.......X..XX.......X..X.XXXX......................XXXX.X..X.......XX..X.......',
+  '......X...XXX.....XX...X.XX........................XX.X...XX.....XXX...X......',
+  '.....XX...XXX...........X.X..........................X......X....XXX...XX.....',
+  '....XXX....XX.....XXXX...X..........................X...XXXX.....XX....XXX....',
+  '....XX......X....XXXXXXXX.XX......................X..XXXXXXXX....X......XX....',
+  '....X............XXXX..X.X..........................X.X..XXXX............X....',
+  '....X.............XX.XXXXX..........................XXXXX.XX..................',
+  '.................XX.XXXXX............................XXXXX.XX.................',
+  '................XXXXXXXX..............................XXXXXXXX................',
+  '...............XXXXX.X..................................X.XXXXX...............',
+  '...............X..............................................................',
+  '................X.............................................................',
 ])
 
 // The seal over the writing: "type anything" stitched in the writing's
-// typeface, between borders of roses and leaves. It is worked one stitch
+// typeface, under a bow and roses. It is worked one stitch
 // per cell: a pixel face at its own pixel size, so each of its pixels is a
 // stitch, anything else at the charted em. A face taller than the
 // charted script is drawn smaller, so the title keeps the charted size.
@@ -753,20 +779,11 @@ function sealCells(geometry, face) {
     x += glyph.advance
   }
 
-  // A border of roses and leaves above and below the words, worked one
-  // stitch per pixel of the words' face, in whole repeats wide enough to
-  // run past both ends.
-  const repeat = ROSE_BORDER.width
-  const count = Math.ceil((width + 24) / repeat)
-  const borderLeft = Math.round(centre - (count * repeat) / 2)
-  const border = (y) => {
-    for (let k = 0; k < count; k += 1) {
-      for (const [dx, dy] of ROSE_BORDER.cells) mark(borderLeft + k * repeat + dx, y + dy)
-    }
-  }
-  const gap = 4
-  border(baseline + inkTop - gap - ROSE_BORDER.height)
-  border(baseline + inkBottom + gap + 1)
+  // The bow and roses over the words, worked one stitch per pixel of the
+  // words' face.
+  const bowLeft = Math.round(centre - BOW.width / 2)
+  const bowTop = baseline + inkTop - 4 - BOW.height
+  for (const [dx, dy] of BOW.cells) mark(bowLeft + dx, bowTop + dy)
   return { cells, scale: Math.min(1, CHARTED_INK / (inkBottom - inkTop + 1)) }
 }
 
