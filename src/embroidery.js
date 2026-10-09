@@ -687,13 +687,16 @@ function parseChart(rows) {
 
 // Fairy dust: open diamonds of four stitches, little trios and lone
 // stitches.
+// How many rows the charted script's ink spans, from -7 to 3.
+const CHARTED_INK = 11
 const DIAMOND = parseChart(['.X.', 'X.X', '.X.'])
 const TRIO = parseChart(['X.X', '.X.'])
 
 // The seal over the writing: "type anything" stitched in the writing's
 // typeface, with fairy dust scattered round about. It is worked one stitch
 // per cell: a pixel face at its own pixel size, so each of its pixels is a
-// stitch, anything else at the charted em.
+// stitch, anything else at the charted em. A face taller than the
+// charted script is drawn smaller, so the title keeps the charted size.
 function sealCells(geometry, face) {
   const { centre, top } = geometry.seal
   const em = face?.grid ? face.grid : CHART_EM
@@ -747,7 +750,7 @@ function sealCells(geometry, face) {
     else if (i % 5 === 1) stamp(TRIO, dx - 1, dy)
     else mark(dx, dy)
   }
-  return cells
+  return { cells, scale: Math.min(1, CHARTED_INK / (inkBottom - inkTop + 1)) }
 }
 
 // Soften a finished layer slightly: lace thread is fuzzy, never crisp.
@@ -1131,20 +1134,19 @@ export class LaceRenderer {
     // document space and scroll with it.
     const ornamentKey = `${pieceGeometry.frame.bottom}:${scene.face?.family ?? ''}:${scene.face?.style ?? ''}`
     if (ornamentKey !== this.ornamentKey) {
-      this.ornaments = [
-        ...sealCells(pieceGeometry, scene.face),
-      ]
+      this.ornaments = sealCells(pieceGeometry, scene.face)
       this.ornamentKey = ornamentKey
     }
     // The seal is worked finer than the writing, one stitch per cell; on
     // phones its blocks are drawn smaller still, about its middle.
-    const { centre, top, scale } = pieceGeometry.seal
-    const middle = top + 14
+    const { centre, top } = pieceGeometry.seal
+    const scale = pieceGeometry.seal.scale * this.ornaments.scale
+    const middle = top + 13
     context.save()
     context.translate(centre * cell, (middle - bandStart) * cell)
     context.scale(scale, scale)
     context.translate(-centre * cell, -(middle - bandStart) * cell)
-    for (const [x, y] of this.ornaments) {
+    for (const [x, y] of this.ornaments.cells) {
       if (inBand(x, y - bandStart)) this.drawBlock(context, x, y - bandStart)
     }
     context.restore()
