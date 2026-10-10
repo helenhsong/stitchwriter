@@ -139,7 +139,7 @@ const BLOCK_VARIANTS = 6
 // scroll smoothly with the page by sliding one painted strip.
 const MESH_PERIOD = 16
 // The brief beat the thread stays taut after the last stitch, in ms.
-const THREAD_HOLD = 200
+const THREAD_HOLD = 250
 // The mesh is worked at one fixed gauge: each open hole is this many CSS
 // pixels across.
 const MESH_CELL = 2.25
