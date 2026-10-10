@@ -168,7 +168,7 @@ export function createGeometry(viewportWidth, viewportHeight, face) {
   const em = compact && face?.grid > CHART_EM * 1.3 ? face.grid : CHART_EM * (compact ? 1 : 2)
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
-  // The seal: an embroidered title between roses at the top
+  // The seal: an embroidered title among sparkles at the top
   // of the page, between the header links on wide screens. It is charted
   // one stitch per cell, smaller still on phones.
   const centre = Math.floor(Math.floor(viewportWidth / cell) / 2)
@@ -690,42 +690,29 @@ function parseChart(rows) {
 // How many rows the charted script's ink spans, from -7 to 3.
 const CHARTED_INK = 11
 
-// Fairy dust: open diamonds of four stitches, little trios and lone
-// stitches.
-const DIAMOND = parseChart(['.X.', 'X.X', '.X.'])
-const TRIO = parseChart(['X.X', '.X.'])
-
-// A small rose on its stem, charted after the filet crochet roses; the
-// right-hand one is its mirror image.
-const ROSE = parseChart([
-  '......XXX......',
-  '....XXX.XXX....',
-  '...XX.XXX.XX...',
-  '..XXX.X..X.XX..',
-  '..XX.X.XX.XXX..',
-  '..XX.X.X.XXXX..',
-  '..XXX.X..XXXX..',
-  '...XXX.XXXXX...',
-  '....XXXXXXX....',
-  '......XXX...XX.',
-  '.......X...XXXX',
-  '.XX....X..XXXX.',
-  'XXXX...X.X.XX..',
-  '.XXXX..XX......',
-  '..XX.X.X.......',
-  '.....XXX.......',
-  '.......X.......',
-  '.......X.......',
+// Sparkles: four-pointed stars, one solid and one with an open eye,
+// strewn with lone stitches.
+const SPARKLE = parseChart([
+  '...X...',
+  '...X...',
+  '...XX..',
+  'XXXXXXX',
+  '..XXX..',
+  '...X...',
+  '...X...',
 ])
-const mirror = (chart) => ({
-  ...chart,
-  cells: chart.cells.map(([x, y]) => [chart.width - 1 - x, y]),
-})
-const ROSE_LEFT = ROSE
-const ROSE_RIGHT = mirror(ROSE)
+const OPEN_SPARKLE = parseChart([
+  '...X...',
+  '...X...',
+  '..XXX..',
+  'XXX.XXX',
+  '..XXX..',
+  '...X...',
+  '...X...',
+])
 
 // The seal over the writing: "type anything" stitched in the writing's
-// typeface, between two roses with fairy dust round about. It is worked one stitch
+// typeface, with sparkles scattered round about. It is worked one stitch
 // per cell: a pixel face at its own pixel size, so each of its pixels is a
 // stitch, anything else at the charted em. A face taller than the
 // charted script is drawn smaller, so the title keeps the charted size.
@@ -767,29 +754,28 @@ function sealCells(geometry, face) {
   const stamp = (chart, x, y) => {
     for (const [dx, dy] of chart.cells) mark(x + dx, y + dy)
   }
-  // Fairy dust drifting round the words.
-  const dust = [
-    [-1.12, -9], [-0.95, -12], [-0.62, -12], [-0.2, -13], [0.12, -12],
-    [0.48, -13], [0.8, -11], [1.1, -8], [-1.2, 4], [-0.78, 9], [-0.05, 11],
-    [0.42, 10], [0.9, 8], [1.24, 3],
+  // Sparkles and lone stitches round the words, placed across their width
+  // (1 is just past an end) and above (negative) or below.
+  const sparkles = [
+    [-1.2, -6], [-0.52, -12], [0.3, -13], [1.18, -9], [-0.9, 10], [0.08, 12],
+    [0.85, 9], [1.3, 3],
+  ]
+  const dots = [
+    [-1.38, -12], [-0.8, -15], [-0.18, -12], [0.66, -15], [0.98, -12],
+    [1.42, -2], [-1.34, 4], [-0.5, 12], [0.4, 14], [1.2, 12], [-1.1, 14],
   ]
   const reach = width / 2 + 6
-  for (const [i, [across, down]] of dust.entries()) {
-    const dx = centre + across * reach
-    // Dust above the words keeps its distance from their tops, and dust
-    // below from their bottoms (the charted script's run from -7 to 3).
-    const dy = down < 0 ? baseline + inkTop + 7 + down : baseline + inkBottom - 3 + down
-    if (i % 3 === 0) stamp(DIAMOND, dx - 1, dy - 1)
-    else if (i % 5 === 1) stamp(TRIO, dx - 1, dy)
-    else mark(dx, dy)
+  // Above the words keeps its distance from their tops, and below from
+  // their bottoms (the charted script's run from -7 to 3).
+  const place = ([across, down]) => [
+    Math.round(centre + across * reach),
+    down < 0 ? baseline + inkTop + 7 + down : baseline + inkBottom - 3 + down,
+  ]
+  for (const [i, spot] of sparkles.entries()) {
+    const [x, y] = place(spot)
+    stamp(i % 2 ? OPEN_SPARKLE : SPARKLE, x - 3, y - 3)
   }
-
-  // A rose either side, just beyond the dust, its middle level with the
-  // words' middle.
-  const middle = baseline + Math.round((inkTop + inkBottom) / 2)
-  const clear = Math.ceil(reach * 1.24) + 3
-  stamp(ROSE_LEFT, Math.round(centre - clear - ROSE_LEFT.width), middle - Math.round(ROSE_LEFT.height / 2))
-  stamp(ROSE_RIGHT, Math.round(centre + clear), middle - Math.round(ROSE_RIGHT.height / 2))
+  for (const spot of dots) mark(...place(spot))
   return { cells, scale: Math.min(1, CHARTED_INK / (inkBottom - inkTop + 1)) }
 }
 
