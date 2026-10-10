@@ -142,8 +142,9 @@ const MESH_PERIOD = 16
 const THREAD_HOLD = 300
 // How long the thread takes to lift taut when stitching starts, in ms.
 const THREAD_LIFT = 320
-// Let go, it falls slack along the same path in reverse, more slowly.
-const THREAD_FALL = 650
+// Let go, it falls slack along the same path in reverse, settling with
+// this time constant, in ms (the same as an unpicked end dropping back).
+const THREAD_FALL = 220
 // The mesh is worked at one fixed gauge: each open hole is this many CSS
 // pixels across.
 const MESH_CELL = 2.25
@@ -1641,11 +1642,10 @@ export class LaceRenderer {
     } else if (working) {
       // Picked back up, it lifts in one smooth sweep rather than snapping.
       this.tension = Math.min(1, (this.tension ?? 0) + elapsed / THREAD_LIFT)
-    } else {
-      const fallen = this.lastWorked === undefined
-        ? 1
-        : clamp((now - this.lastWorked - THREAD_HOLD) / THREAD_FALL, 0, 1)
-      this.tension = Math.min(this.tension ?? 0, 1 - fallen)
+    } else if (this.lastWorked === undefined || now - this.lastWorked > THREAD_HOLD) {
+      // Let go, it drops the way an unpicked end settles back down: quickly
+      // at first, then easing into its hang.
+      this.tension = (this.tension ?? 0) * Math.exp(-elapsed / THREAD_FALL)
     }
 
     const idleSway = reducedMotion ? 0 : Math.sin(now / 1100) * 0.18
@@ -1653,7 +1653,7 @@ export class LaceRenderer {
     this.lift = reducedMotion
       ? liftTarget
       : (this.lift ?? 0) +
-        (liftTarget - (this.lift ?? 0)) * (1 - Math.exp(-elapsed / (liftTarget ? 50 : 220)))
+        (liftTarget - (this.lift ?? 0)) * (1 - Math.exp(-elapsed / (liftTarget ? 50 : THREAD_FALL)))
     drawThread(context, this.anchor, geometry, {
       stitch: stitch.index,
       progress: stitch.progress,
