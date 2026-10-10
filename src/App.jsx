@@ -253,14 +253,18 @@ function App() {
     }
     ghostsRef.current = ghosts
     const lastEnd = ghosts.reduce((latest, ghost) => Math.max(latest, ghost.end), 0)
+    // While letters are still being unpicked, the ones after them stay where
+    // they stood, and anything typed in their place waits for them to come
+    // out, so nothing slides over or stitches on top of a letter mid-unpick.
     const current = heldRef.current
-    const heldBase = current?.text === previousTextRef.current ? current.layout : oldLayout
-    if (removed > 0 && added === 0 && suffix > 0 && heldBase && lastEnd > now) {
+    const holding = current?.text === previousTextRef.current
+    const heldBase = holding ? current.layout : oldLayout
+    const unpicking = lastEnd > now && (removed > 0 || holding)
+    if (unpicking && suffix > 0 && heldBase) {
       const characters = layout.characters.map((item) => {
-        const before = heldBase.characters[item.index + removed]
-        return item.index < prefix || !before
-          ? item
-          : { ...item, col: before.col, end: before.end, line: before.line }
+        if (item.index < prefix + added) return item
+        const before = heldBase.characters[item.index - added + removed]
+        return before ? { ...item, col: before.col, end: before.end, line: before.line } : item
       })
       setHeld({ text, layout: { ...layout, characters, height: Math.max(layout.height, heldBase.height) } })
       window.clearTimeout(holdTimerRef.current)
@@ -287,7 +291,7 @@ function App() {
       // Pastes are stitched quickly; fast typing catches up gradually.
       const backlog = Math.max(0, lastBirth - now)
       const gap = bulk ? spacing : Math.max(20, spacing - backlog * 0.5)
-      const birth = Math.max(now, lastBirth + gap)
+      const birth = Math.max(unpicking ? lastEnd : now, lastBirth + gap)
       births[index] = birth
       lastBirth = birth
     }
