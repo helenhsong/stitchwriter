@@ -159,7 +159,11 @@ function hash(x, y) {
 export function createGeometry(viewportWidth, viewportHeight, face) {
   const compact = viewportWidth < 560
   // A fine, tight mesh, the same at every window size.
-  const cell = MESH_CELL
+  // Below two device pixels per CSS pixel, a hole that isn't a whole number
+  // of device pixels across is worked unevenly: some holes come out a pixel
+  // wider than the rest. There the gauge is rounded to whole device pixels.
+  const ratio = Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, 2)
+  const cell = ratio >= 2 ? MESH_CELL : Math.round(MESH_CELL * ratio) / ratio
   // Letters are charted at one stitch per cell on phones and two on wider
   // screens; em sizes everything else (fallback punctuation, spacing, the
   // caret) to match them.
