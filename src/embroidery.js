@@ -140,6 +140,8 @@ const BLOCK_VARIANTS = 6
 const MESH_PERIOD = 16
 // How long the working thread stays taut after the last stitch, in ms.
 const THREAD_HOLD = 1200
+// How long it then takes to fall slack, in ms.
+const THREAD_FALL = 700
 // The mesh is worked at one fixed gauge: each open hole is this many CSS
 // pixels across.
 const MESH_CELL = 2.25
@@ -1601,14 +1603,19 @@ export class LaceRenderer {
 
     // Ease between the taut working thread and the slack resting one. The
     // hand keeps hold of the thread for a moment after the last stitch, then
-    // drops it, and it falls quickly.
+    // lets it go, and it falls in one smooth movement (drawThread eases it in
+    // and out).
     if (working) this.lastWorked = now
-    const holding = this.lastWorked !== undefined && now - this.lastWorked < THREAD_HOLD
-    const tensionTarget = (working || holding) && !reducedMotion ? 1 : 0
-    const settle = tensionTarget > (this.tension ?? 0) ? 90 : 110
-    this.tension = reducedMotion
-      ? tensionTarget
-      : (this.tension ?? 0) + (tensionTarget - (this.tension ?? 0)) * (1 - Math.exp(-elapsed / settle))
+    if (reducedMotion) {
+      this.tension = working ? 1 : 0
+    } else if (working) {
+      this.tension = (this.tension ?? 0) + (1 - (this.tension ?? 0)) * (1 - Math.exp(-elapsed / 90))
+    } else {
+      const fallen = this.lastWorked === undefined
+        ? 1
+        : clamp((now - this.lastWorked - THREAD_HOLD) / THREAD_FALL, 0, 1)
+      this.tension = Math.min(this.tension ?? 0, 1 - fallen)
+    }
 
     const idleSway = reducedMotion ? 0 : Math.sin(now / 1100) * 0.18
     const liftTarget = pulling && !reducedMotion ? 1 : 0
