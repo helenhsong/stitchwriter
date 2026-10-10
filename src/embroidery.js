@@ -141,8 +141,9 @@ const MESH_PERIOD = 16
 // How long the working thread stays taut after the last stitch, in ms.
 const THREAD_HOLD = 300
 // How long the thread takes to lift taut when stitching starts, in ms.
-// Let go, it falls slack along the same path in reverse, just as quickly.
-const THREAD_SWING = 320
+const THREAD_LIFT = 320
+// Let go, it falls slack along the same path in reverse, more slowly.
+const THREAD_FALL = 650
 // The mesh is worked at one fixed gauge: each open hole is this many CSS
 // pixels across.
 const MESH_CELL = 2.25
@@ -1639,11 +1640,11 @@ export class LaceRenderer {
       this.tension = working ? 1 : 0
     } else if (working) {
       // Picked back up, it lifts in one smooth sweep rather than snapping.
-      this.tension = Math.min(1, (this.tension ?? 0) + elapsed / THREAD_SWING)
+      this.tension = Math.min(1, (this.tension ?? 0) + elapsed / THREAD_LIFT)
     } else {
       const fallen = this.lastWorked === undefined
         ? 1
-        : clamp((now - this.lastWorked - THREAD_HOLD) / THREAD_SWING, 0, 1)
+        : clamp((now - this.lastWorked - THREAD_HOLD) / THREAD_FALL, 0, 1)
       this.tension = Math.min(this.tension ?? 0, 1 - fallen)
     }
 
