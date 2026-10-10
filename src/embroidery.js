@@ -1070,7 +1070,6 @@ function drawThread(context, origin, geometry, { stitch, progress, tension, swin
     hand,
     count,
   )
-  taut.push({ x: hand.x + Math.cos(workAngle) * 2400, y: hand.y + Math.sin(workAngle) * 2400 })
 
   // Resting: a short loose end hangs straight down from the lace under its
   // own weight, swaying a little.
@@ -1089,12 +1088,20 @@ function drawThread(context, origin, geometry, { stitch, progress, tension, swin
     rest,
     count,
   )
-  slack.push({ x: rest.x, y: rest.y + 2400 * (1 - 2 * up) })
 
   const shape = slack.map((point, index) => ({
     x: lerp(point.x, taut[index].x, ease),
     y: lerp(point.y, taut[index].y, ease),
   }))
+  // Beyond the curve the thread runs on straight, the way the curve was
+  // heading, so it never bends sharply as it goes from taut to slack.
+  const end = shape.at(-1)
+  const before = shape.at(-2)
+  const heading = Math.hypot(end.x - before.x, end.y - before.y) || 1
+  shape.push({
+    x: end.x + ((end.x - before.x) / heading) * 2400,
+    y: end.y + ((end.y - before.y) / heading) * 2400,
+  })
   // Where the thread leaves the lace.
   shape.unshift({ ...origin })
   // Pulled taut, the thread pays out to its full length; let go, it
@@ -1594,11 +1601,11 @@ export class LaceRenderer {
 
     // Ease between the taut working thread and the slack resting one. The
     // hand keeps hold of the thread for a moment after the last stitch, then
-    // lets it go more slowly than it took it up, like letting go of yarn.
+    // drops it, and it falls quickly.
     if (working) this.lastWorked = now
     const holding = this.lastWorked !== undefined && now - this.lastWorked < THREAD_HOLD
     const tensionTarget = (working || holding) && !reducedMotion ? 1 : 0
-    const settle = tensionTarget > (this.tension ?? 0) ? 90 : 750
+    const settle = tensionTarget > (this.tension ?? 0) ? 90 : 110
     this.tension = reducedMotion
       ? tensionTarget
       : (this.tension ?? 0) + (tensionTarget - (this.tension ?? 0)) * (1 - Math.exp(-elapsed / settle))
