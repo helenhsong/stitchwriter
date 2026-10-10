@@ -168,7 +168,7 @@ export function createGeometry(viewportWidth, viewportHeight, face) {
   const em = compact && face?.grid > CHART_EM * 1.3 ? face.grid : CHART_EM * (compact ? 1 : 2)
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
-  // The seal: an embroidered title with fairy dust at the top
+  // The seal: an embroidered title among sparkles at the top
   // of the page, between the header links on wide screens. It is charted
   // one stitch per cell, smaller still on phones.
   const centre = Math.floor(Math.floor(viewportWidth / cell) / 2)
@@ -690,13 +690,29 @@ function parseChart(rows) {
 // How many rows the charted script's ink spans, from -7 to 3.
 const CHARTED_INK = 11
 
-// Fairy dust: open diamonds of four stitches, little trios and lone
-// stitches.
-const DIAMOND = parseChart(['.X.', 'X.X', '.X.'])
-const TRIO = parseChart(['X.X', '.X.'])
+// Sparkles: four-pointed stars, one solid and one with an open eye,
+// strewn with lone stitches.
+const SPARKLE = parseChart([
+  '...X...',
+  '...X...',
+  '...XX..',
+  'XXXXXXX',
+  '..XXX..',
+  '...X...',
+  '...X...',
+])
+const OPEN_SPARKLE = parseChart([
+  '...X...',
+  '...X...',
+  '..XXX..',
+  'XXX.XXX',
+  '..XXX..',
+  '...X...',
+  '...X...',
+])
 
 // The seal over the writing: "type anything" stitched in the writing's
-// typeface, with fairy dust scattered round about. It is worked one stitch
+// typeface, with sparkles scattered round about. It is worked one stitch
 // per cell: a pixel face at its own pixel size, so each of its pixels is a
 // stitch, anything else at the charted em. A face taller than the
 // charted script is drawn smaller, so the title keeps the charted size.
@@ -712,9 +728,6 @@ function sealCells(geometry, face) {
     if (seen.has(key)) return
     seen.add(key)
     cells.push([gx, gy])
-  }
-  const stamp = (chart, x, y) => {
-    for (const [dx, dy] of chart.cells) mark(x + dx, y + dy)
   }
   const glyphs = Array.from('type anything').map((character) =>
     /\s/.test(character) ? null : getGlyph(character, em, face),
@@ -738,21 +751,25 @@ function sealCells(geometry, face) {
     x += glyph.advance
   }
 
-  // Fairy dust drifting round the words.
-  const dust = [
-    [-1.12, -9], [-0.95, -12], [-0.62, -12], [-0.2, -13], [0.12, -12],
-    [0.48, -13], [0.8, -11], [1.1, -8], [-1.2, 4], [-0.78, 9], [-0.05, 11],
-    [0.42, 10], [0.9, 8], [1.24, 3],
-  ]
-  for (const [i, [across, down]] of dust.entries()) {
-    const dx = centre + across * (width / 2 + 6)
-    // Dust above the words keeps its distance from their tops, and dust
-    // below from their bottoms (the charted script's run from -7 to 3).
-    const dy = down < 0 ? baseline + inkTop + 7 + down : baseline + inkBottom - 3 + down
-    if (i % 3 === 0) stamp(DIAMOND, dx - 1, dy - 1)
-    else if (i % 5 === 1) stamp(TRIO, dx - 1, dy)
-    else mark(dx, dy)
+  const stamp = (chart, x, y) => {
+    for (const [dx, dy] of chart.cells) mark(x + dx, y + dy)
   }
+  // Sparkles and lone stitches round the words, placed across their width
+  // (1 is just past an end) and above (negative) or below.
+  const sparkles = [[-1.18, -7], [0.35, -13], [1.25, 1], [-0.45, 11]]
+  const dots = [[-0.8, -14], [1.3, -10], [0.95, -11], [-1.35, 5], [0.6, 12]]
+  const reach = width / 2 + 6
+  // Above the words keeps its distance from their tops, and below from
+  // their bottoms (the charted script's run from -7 to 3).
+  const place = ([across, down]) => [
+    Math.round(centre + across * reach),
+    down < 0 ? baseline + inkTop + 7 + down : baseline + inkBottom - 3 + down,
+  ]
+  for (const [i, spot] of sparkles.entries()) {
+    const [x, y] = place(spot)
+    stamp(i % 2 ? OPEN_SPARKLE : SPARKLE, x - 3, y - 3)
+  }
+  for (const spot of dots) mark(...place(spot))
   return { cells, scale: Math.min(1, CHARTED_INK / (inkBottom - inkTop + 1)) }
 }
 
@@ -828,43 +845,30 @@ function twist(layer, ratio, cell, rowOffset, origin = null) {
   context.restore()
 }
 
-// Round the worked stitches like padded satin: each stroke catches the
-// light along its middle and falls into shade toward its edges. A blurred
-// copy of the stitching is thickest where a stroke is widest, so it
-// lightens the middles and its absence darkens the edges.
-function dome(layer, ratio, cell) {
-  const { canvas, context } = layer
-  if (!('filter' in context)) return
-  const spread = cell * 0.7 * ratio
-  const blurred = document.createElement('canvas')
-  blurred.width = canvas.width
-  blurred.height = canvas.height
-  const soft = blurred.getContext('2d')
-  soft.filter = `blur(${spread}px)`
-  soft.drawImage(canvas, 0, 0)
-
-  // Shade: dark everywhere except where the blurred stitching is solid.
-  const shade = document.createElement('canvas')
-  shade.width = canvas.width
-  shade.height = canvas.height
-  const dark = shade.getContext('2d')
-  dark.fillStyle = 'rgba(52, 50, 46, 0.42)'
-  dark.fillRect(0, 0, shade.width, shade.height)
-  dark.globalCompositeOperation = 'destination-out'
-  dark.drawImage(blurred, 0, 0)
-
-  // Light: the blurred stitching itself, nudged up and left toward the
-  // light, as a faint sheen.
-  soft.filter = 'none'
-  soft.globalCompositeOperation = 'source-in'
-  soft.fillStyle = 'rgba(255, 255, 255, 0.5)'
-  soft.fillRect(0, 0, blurred.width, blurred.height)
-
+// Raise the worked stitches like padded satin: every stroke catches the
+// light along its top and left edges and falls into shade along its bottom
+// and right, so its middle stands up off the mesh. `cells` holds the
+// worked stitches as "x,y" keys in document rows; `rowOffset` maps them
+// into the band.
+function bevel(context, cells, cell, lineWidth, rowOffset) {
+  const size = cell + lineWidth
+  const band = cell * 0.34
+  const light = new Path2D()
+  const shade = new Path2D()
+  for (const key of cells) {
+    const [gx, gy] = key.split(',').map(Number)
+    const x = gx * cell
+    const y = (gy - rowOffset) * cell
+    if (!cells.has(`${gx},${gy - 1}`)) light.rect(x, y, size, band)
+    if (!cells.has(`${gx - 1},${gy}`)) light.rect(x, y, band, size)
+    if (!cells.has(`${gx},${gy + 1}`)) shade.rect(x, y + size - band, size, band)
+    if (!cells.has(`${gx + 1},${gy}`)) shade.rect(x + size - band, y, band, size)
+  }
   context.save()
-  context.setTransform(1, 0, 0, 1, 0, 0)
-  context.globalCompositeOperation = 'source-atop'
-  context.drawImage(shade, 0.3 * cell * ratio, 0.4 * cell * ratio)
-  context.drawImage(blurred, -0.25 * cell * ratio, -0.3 * cell * ratio)
+  context.fillStyle = 'rgba(46, 44, 40, 0.5)'
+  context.fill(shade)
+  context.fillStyle = 'rgba(255, 255, 255, 0.55)'
+  context.fill(light)
   context.restore()
 }
 
@@ -1281,11 +1285,14 @@ export class LaceRenderer {
     context.scale(scale, scale)
     context.translate(-centre * cell, -(middle - bandStart) * cell)
     const sealStitches = new Set()
+    // It is drawn scaled about its middle, so cull it by rows only, and
+    // loosely.
     for (const [x, y] of this.ornaments.cells) {
-      if (!inBand(x, y - bandStart)) continue
+      if (y - bandStart < -40 || y - bandStart > layerRows + 40) continue
       this.drawBlock(context, x, y - bandStart)
       sealStitches.add(`${x},${y}`)
     }
+    bevel(context, sealStitches, cell, geometry.lineWidth, bandStart)
     fray(context, sealStitches, cell, geometry.lineWidth, bandStart)
     context.restore()
 
@@ -1302,7 +1309,7 @@ export class LaceRenderer {
       }
     }
     twist(this.textLayer, this.ratio, cell, bandStart)
-    dome(this.textLayer, this.ratio, cell)
+    bevel(context, stitches, cell, geometry.lineWidth, bandStart)
     fray(context, stitches, cell, geometry.lineWidth, bandStart)
     soften(this.textLayer, this.ratio * 0.3)
     raise(this.textLayer, this.ratio)
@@ -1327,7 +1334,7 @@ export class LaceRenderer {
       stitches.add(`${gx},${gy}`)
     }
     twist(layer, ratio, cell, 0, [left, top])
-    dome(layer, ratio, cell)
+    bevel(layer.context, stitches, cell, lineWidth, 0)
     fray(layer.context, stitches, cell, lineWidth, 0)
     soften(layer, ratio * 0.3)
     raise(layer, ratio)
