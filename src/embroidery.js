@@ -426,6 +426,33 @@ export function caretIndexAt(layout, geometry, col, row) {
   return best
 }
 
+// The insertion point closest to a position anywhere on the page: the
+// nearest line, then the nearest gap between characters on it.
+export function caretIndexNearest(layout, geometry, col, row) {
+  const { lineHeight, baselineOffset, em } = geometry
+  const line = clamp(
+    Math.round((row - baselineOffset + em * 0.35) / lineHeight),
+    0,
+    layout.lines - 1,
+  )
+  const onLine = layout.characters.filter((item) => item.line === line)
+  const marks = onLine.filter((item) => item.character !== '\n')
+  if (!marks.length) {
+    // An empty line: before its line break, or the end of the writing.
+    return onLine[0]?.index ?? layout.characters.length
+  }
+  let best = marks[0].index
+  let bestDistance = Math.abs(col - marks[0].col)
+  for (const item of marks) {
+    const distance = Math.abs(col - item.end)
+    if (distance < bestDistance) {
+      best = item.index + 1
+      bestDistance = distance
+    }
+  }
+  return best
+}
+
 function makeCanvas(width, height, ratio) {
   const canvas = document.createElement('canvas')
   canvas.width = Math.max(1, Math.round(width * ratio))
