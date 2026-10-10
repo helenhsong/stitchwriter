@@ -139,9 +139,11 @@ const BLOCK_VARIANTS = 6
 // scroll smoothly with the page by sliding one painted strip.
 const MESH_PERIOD = 16
 // How long the working thread stays taut after the last stitch, in ms.
-const THREAD_HOLD = 1200
+const THREAD_HOLD = 800
 // How long it then takes to fall slack, in ms.
 const THREAD_FALL = 1100
+// How long it takes to lift taut again when stitching starts, in ms.
+const THREAD_LIFT = 320
 // The mesh is worked at one fixed gauge: each open hole is this many CSS
 // pixels across.
 const MESH_CELL = 2.25
@@ -1112,7 +1114,7 @@ function drawThread(context, origin, geometry, { stitch, progress, tension, swin
   // fall, so the strand drops and draws in together; the rest lies off
   // the canvas and is only there while it is held.
   const reach = clamp(origin.y * 1.3 + 120, hang, 3200)
-  const points = trimStrand(shape, lerp(hang, reach, ease) + (3200 - reach) * ease ** 8)
+  const points = trimStrand(shape, lerp(hang, reach, ease ** 2.5) + (3200 - reach) * ease ** 8)
 
   if (loop > 0.4) {
     context.save()
@@ -1613,7 +1615,8 @@ export class LaceRenderer {
     if (reducedMotion) {
       this.tension = working ? 1 : 0
     } else if (working) {
-      this.tension = (this.tension ?? 0) + (1 - (this.tension ?? 0)) * (1 - Math.exp(-elapsed / 90))
+      // Picked back up, it lifts in one smooth sweep rather than snapping.
+      this.tension = Math.min(1, (this.tension ?? 0) + elapsed / THREAD_LIFT)
     } else {
       const fallen = this.lastWorked === undefined
         ? 1
