@@ -168,11 +168,11 @@ export function createGeometry(viewportWidth, viewportHeight, face) {
   const em = compact && face?.grid > CHART_EM * 1.3 ? face.grid : CHART_EM * (compact ? 1 : 2)
   const cols = Math.ceil(viewportWidth / cell)
   const rows = Math.ceil(viewportHeight / cell)
-  // The seal: an embroidered title under a bow and roses at the top
+  // The seal: an embroidered title between roses at the top
   // of the page, between the header links on wide screens. It is charted
   // one stitch per cell, smaller still on phones.
   const centre = Math.floor(Math.floor(viewportWidth / cell) / 2)
-  const sealTop = Math.round((compact ? 114 : 104) / cell) - 14
+  const sealTop = Math.round((compact ? 114 : 80) / cell) - 14
   // Below the seal, open lace for the writing.
   const across = compact
     ? Math.floor(viewportWidth / cell) - Math.round(48 / cell)
@@ -690,57 +690,85 @@ function parseChart(rows) {
 // How many rows the charted script's ink spans, from -7 to 3.
 const CHARTED_INK = 11
 
-// A bow tied between two sprays of roses, copied stitch for stitch from a
-// filet crochet chart.
-const BOW = parseChart([
-  '.........................XXX......................XXX.........................',
-  '........................XXXXX....................XXXXX........................',
-  '........................X..XXX..................XXX..X........................',
-  '.......................X....XXX................XXX....X.......................',
-  '......................XX....XXXX..............XXXX....XX......................',
-  '......................XX.......XX............XX.......XX......................',
-  '......................XXX.......XX....XX....XX.......XXX......................',
-  '......................XXX........XXX.X..X.XXX........XXX......................',
-  '......................XXXXXX........XX..XX........XXXXXX......................',
-  '.......................XXXXXXXXXXXX.XX..XX.XXXXXXXXXXXX.......................',
-  '........................XXXXXXXX....XX..XX....XXXXXXXX........................',
-  '.......XXX.......................XX..X..X..XX.......................XXX.......',
-  '...XX.XXXXX..................XXXXX....XX....XXXXX..................XXXXX.XX...',
-  '........XXX................XXX..................XXX................XXX.....X..',
-  '.X..XX....................XXX.........XX.........XXX................X..XXX..X.',
-  '.X.X...XX.XXX............XXX..........XX..........XXX............XXX.XX...X.X.',
-  '...X....X.XXXX..........XXX..........X..X.......X..XXX..........XXXX.X.X..X...',
-  '.X.XXXX.X.XXXX..X......XXX...XXXX....X..X....XXXX...XXX......X..XXXX.X.XXXX.X.',
-  'XX.XXXXXX.XXXX..XX.....XXX....XXXX...X..X...XXXX....XXX.....XX..XXXX.XXXXXX.XX',
-  'XXX.XXXX.XXXXX..XXX....XXXX....XXXX......X.XXXX....XXXX....XXX..XXXX..XXXX.XXX',
-  'XXX.....X.XXX..XXXX.....XXXX.......XX....XX.......XXXX.....XXXX..XXX......XXXX',
-  '.XX.XXXXXX.....XXXX......XXX........X....X........XXX......XXXX.....XXXXXX.XX.',
-  '....XXXXXX.XX..XXX........XX.......XX....XX.......XX........XXX..XX.XXXXXX....',
-  '....XXXXXX...XX.X..XXX....XX......X.X....X.X......XX....XXX..X.XX...XXXXXX....',
-  '.....XXXX......XX.XXXXX...X......XX..X..X..XX......X...XXXXX.XX......XXXX.....',
-  '.................XXXXXXXXX......XXX..X..X..XXX......XXXXXXXXX.................',
-  '................XXX........X....XXX...XX...XXX....X........XXX................',
-  '...XXXX............X..XX...X....XX....XX....XX....X...XX..X............XXXX...',
-  '....XXXX....XX.....X....X.XXX...X............X...XXX.X....X.....XX....XXXX....',
-  '.....XXXX..X....XX..X..XX.XXX....................XXX.XX..X..XX....XX.XXXX.....',
-  '.................XX..X.XXXXXX....................XXXXXX.X..XX.................',
-  '..........X.......XX.X.XXXXXX....................XXXXXX.X.XX.......X..........',
-  '.......X..XX.......X..X.XXXX......................XXXX.X..X.......XX..X.......',
-  '......X...XXX.....XX...X.XX........................XX.X...XX.....XXX...X......',
-  '.....XX...XXX...........X.X..........................X......X....XXX...XX.....',
-  '....XXX....XX.....XXXX...X..........................X...XXXX.....XX....XXX....',
-  '....XX......X....XXXXXXXX.XX......................X..XXXXXXXX....X......XX....',
-  '....X............XXXX..X.X..........................X.X..XXXX............X....',
-  '....X.............XX.XXXXX..........................XXXXX.XX..................',
-  '.................XX.XXXXX............................XXXXX.XX.................',
-  '................XXXXXXXX..............................XXXXXXXX................',
-  '...............XXXXX.X..................................X.XXXXX...............',
-  '...............X..............................................................',
-  '................X.............................................................',
+// Fairy dust: open diamonds of four stitches, little trios and lone
+// stitches.
+const DIAMOND = parseChart(['.X.', 'X.X', '.X.'])
+const TRIO = parseChart(['X.X', '.X.'])
+
+// Two roses on their stems, copied stitch for stitch from filet crochet
+// charts.
+const ROSE_LEFT = parseChart([
+  '..............XX............',
+  '...........XX...XXX.........',
+  '.........XXXXX.XXXXXX.......',
+  '........XXXXXX.XXXXXX.......',
+  '.......XXXXXX.X..XXXXX......',
+  '.......XXXXX.X.XX..XXX......',
+  '........XXX.XX.X.X.X........',
+  '......X.XXX.XX.X..X.XX......',
+  '.....X......XX.XX...XXX.....',
+  '.....X...XX.XXX.XXX.XXX.....',
+  '.....XX.XXXX.XXX...XXXX.....',
+  '.....XX.XXXX.XXXXXX.XXX..X..',
+  '......XXXXXXX.XXXX.XXX....X.',
+  '........XXXXXX....XX......XX',
+  '..X......XXXX.XXXXXX.....XXX',
+  '.XX.......XXX.XXXXXX..X..XXX',
+  '.XX....X...X..XXXX...X..XXXX',
+  'XXXX...X..X.........XX..XXX.',
+  'XXXXX.XX..X..X...X.XXX..XX..',
+  '.XXXX.XX..X.X...XX.XX..XX...',
+  '.XXXX.XXX..X...XXX.X..X.....',
+  '..XXX..XX..X...XXX.X.X...XX.',
+  '.....X.XX..X...XX...X..XXX..',
+  '......X.....X...X..X.XXXXX..',
+  '.......XX...X...X.X.XXXXX...',
+  '..XXXXXX.XX..X...X....XX....',
+  '.XXXXXX.......X.............',
+  '...XXX...XXXX.X.X.XXXX......',
+  '........XXXX.XXX...XXXX.....',
+  '........XXX...X......XXX....',
+  '.......XXXX...XX............',
+  '.......XX.....X.............',
+  '..............X.............',
+  '..............X.............',
+  '..............X.............',
+])
+const ROSE_RIGHT = parseChart([
+  '...........XXX............',
+  '........XXX..XXX..........',
+  '......XX..XXXXXXX.........',
+  '.....XXXX..XXX.XX.........',
+  '.....X.XX.X.XX.X.XX.......',
+  '....X....XX.X.X.XXXX......',
+  '....X.XX.XX.XXX.XXXX......',
+  '....XX.XXX.XXXX.XXXX......',
+  '...X.XX.XXXXXX.XXXXX......',
+  '...X.XXXX..XXX.X.XX.......',
+  '...XX.XX.XXXX..XX.........',
+  '....XX..XXX..X.XXX........',
+  '....XXXX...XXXXXXX......X.',
+  '.....XX.XXXXXXXXXX...XXXX.',
+  '.......XXXXX..XXX...XX..X.',
+  '..X....XXXXXXX.....XX.XXX.',
+  '.XXXX...XXXXX..X...XX.XX..',
+  '.X.XXX.........X...X.XXX..',
+  '.XX..XX.........X..XXX....',
+  '..XXX.X....X....X.X.......',
+  '...XXXXXX...X...X.XXXXX...',
+  '.......X.XXXXX...XX.X.XXX.',
+  '...XXXX.X.....X..X..XX..XX',
+  '..XX..X.XXX..X.X.X..XX.X.X',
+  '.X..XXX.X.XX...X.X...XXXXX',
+  'XXXXXXX.XX.X...XX.........',
+  '..XXX...XX.X....X.........',
+  '.........XXX....X.........',
+  '.........XXX...X..........',
+  '..........X...X...........',
 ])
 
 // The seal over the writing: "type anything" stitched in the writing's
-// typeface, under a bow and roses. It is worked one stitch
+// typeface, between two roses with fairy dust round about. It is worked one stitch
 // per cell: a pixel face at its own pixel size, so each of its pixels is a
 // stitch, anything else at the charted em. A face taller than the
 // charted script is drawn smaller, so the title keeps the charted size.
@@ -779,11 +807,32 @@ function sealCells(geometry, face) {
     x += glyph.advance
   }
 
-  // The bow and roses over the words, worked one stitch per pixel of the
-  // words' face.
-  const bowLeft = Math.round(centre - BOW.width / 2)
-  const bowTop = baseline + inkTop - 4 - BOW.height
-  for (const [dx, dy] of BOW.cells) mark(bowLeft + dx, bowTop + dy)
+  const stamp = (chart, x, y) => {
+    for (const [dx, dy] of chart.cells) mark(x + dx, y + dy)
+  }
+  // Fairy dust drifting round the words.
+  const dust = [
+    [-1.12, -9], [-0.95, -12], [-0.62, -12], [-0.2, -13], [0.12, -12],
+    [0.48, -13], [0.8, -11], [1.1, -8], [-1.2, 4], [-0.78, 9], [-0.05, 11],
+    [0.42, 10], [0.9, 8], [1.24, 3],
+  ]
+  const reach = width / 2 + 6
+  for (const [i, [across, down]] of dust.entries()) {
+    const dx = centre + across * reach
+    // Dust above the words keeps its distance from their tops, and dust
+    // below from their bottoms (the charted script's run from -7 to 3).
+    const dy = down < 0 ? baseline + inkTop + 7 + down : baseline + inkBottom - 3 + down
+    if (i % 3 === 0) stamp(DIAMOND, dx - 1, dy - 1)
+    else if (i % 5 === 1) stamp(TRIO, dx - 1, dy)
+    else mark(dx, dy)
+  }
+
+  // A rose either side, just beyond the dust, its middle level with the
+  // words' middle.
+  const middle = baseline + Math.round((inkTop + inkBottom) / 2)
+  const clear = Math.ceil(reach * 1.24) + 3
+  stamp(ROSE_LEFT, Math.round(centre - clear - ROSE_LEFT.width), middle - Math.round(ROSE_LEFT.height / 2))
+  stamp(ROSE_RIGHT, Math.round(centre + clear), middle - Math.round(ROSE_RIGHT.height / 2))
   return { cells, scale: Math.min(1, CHARTED_INK / (inkBottom - inkTop + 1)) }
 }
 
