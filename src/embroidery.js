@@ -191,7 +191,6 @@ export function createGeometry(viewportWidth, viewportHeight, face) {
   const frame = { ...inner }
   return {
     cell,
-    ratio,
     em,
     seal: { centre, top: sealTop, scale: compact ? 0.72 : 1 },
     cols,
