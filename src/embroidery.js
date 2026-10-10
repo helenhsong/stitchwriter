@@ -139,7 +139,7 @@ const BLOCK_VARIANTS = 6
 // scroll smoothly with the page by sliding one painted strip.
 const MESH_PERIOD = 16
 // How long the working thread stays taut after the last stitch, in ms.
-const THREAD_HOLD = 1200
+const THREAD_HOLD = 800
 // How long it then takes to fall slack, in ms.
 const THREAD_FALL = 1100
 // How long it takes to lift taut again when stitching starts, in ms.
