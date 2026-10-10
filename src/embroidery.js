@@ -138,6 +138,8 @@ const BLOCK_VARIANTS = 6
 // The mesh pattern repeats every this many rows, so the open lace can
 // scroll smoothly with the page by sliding one painted strip.
 const MESH_PERIOD = 16
+// How long the working thread stays taut after the last stitch, in ms.
+const THREAD_HOLD = 1200
 // The mesh is worked at one fixed gauge: each open hole is this many CSS
 // pixels across.
 const MESH_CELL = 2.25
@@ -1591,9 +1593,12 @@ export class LaceRenderer {
     }
 
     // Ease between the taut working thread and the slack resting one. The
-    // thread relaxes more slowly than it tightens, like letting go of yarn.
-    const tensionTarget = working && !reducedMotion ? 1 : 0
-    const settle = tensionTarget > (this.tension ?? 0) ? 90 : 300
+    // hand keeps hold of the thread for a moment after the last stitch, then
+    // lets it go more slowly than it took it up, like letting go of yarn.
+    if (working) this.lastWorked = now
+    const holding = this.lastWorked !== undefined && now - this.lastWorked < THREAD_HOLD
+    const tensionTarget = (working || holding) && !reducedMotion ? 1 : 0
+    const settle = tensionTarget > (this.tension ?? 0) ? 90 : 750
     this.tension = reducedMotion
       ? tensionTarget
       : (this.tension ?? 0) + (tensionTarget - (this.tension ?? 0)) * (1 - Math.exp(-elapsed / settle))
