@@ -138,13 +138,6 @@ const BLOCK_VARIANTS = 6
 // The mesh pattern repeats every this many rows, so the open lace can
 // scroll smoothly with the page by sliding one painted strip.
 const MESH_PERIOD = 16
-// How long the working thread stays taut after the last stitch, in ms.
-const THREAD_HOLD = 300
-// How long the thread takes to lift taut when stitching starts, in ms.
-const THREAD_LIFT = 320
-// Let go, it falls slack along the same path in reverse, settling with
-// this time constant, in ms (the same as an unpicked end dropping back).
-const THREAD_FALL = 220
 // The mesh is worked at one fixed gauge: each open hole is this many CSS
 // pixels across.
 const MESH_CELL = 2.25
@@ -1110,12 +1103,8 @@ function drawThread(context, origin, geometry, { stitch, progress, tension, swin
   // Where the thread leaves the lace.
   shape.unshift({ ...origin })
   // Pulled taut, the thread pays out to its full length; let go, it
-  // gathers back up into the short hanging end as it falls. Its visible
-  // length (roughly up to the top of the piece) shortens in step with the
-  // fall, so the strand drops and draws in together; the rest lies off
-  // the canvas and is only there while it is held.
-  const reach = clamp(visibleLength(context, origin, taut), hang, 3200)
-  const points = trimStrand(shape, lerp(hang, reach, ease ** 4) + (3200 - reach) * ease ** 8)
+  // gathers back up into the short hanging end.
+  const points = trimStrand(shape, lerp(hang, 3200, ease ** 8))
 
   if (loop > 0.4) {
     context.save()
@@ -1132,30 +1121,6 @@ function drawThread(context, origin, geometry, { stitch, progress, tension, swin
   }
   drawStrand(context, points, width)
   if (ease < 0.6) drawFray(context, points, width, 1 - ease / 0.6)
-}
-
-// How far the taut thread runs from the lace before it leaves the canvas
-// (over the top or the right edge, as drawn now), in pixels.
-function visibleLength(context, origin, points) {
-  const m = context.getTransform()
-  const top = -m.f / m.d
-  const right = (context.canvas.width - m.e) / m.a
-  let length = 0
-  let a = origin
-  for (const b of points) {
-    length += Math.hypot(b.x - a.x, b.y - a.y)
-    if (b.y < top || b.x > right) return length
-    a = b
-  }
-  // Past the hand the thread runs on straight the way it was heading.
-  const before = points.at(-2)
-  const end = points.at(-1)
-  const dx = end.x - before.x
-  const dy = end.y - before.y
-  const heading = Math.hypot(dx, dy) || 1
-  const toTop = dy < 0 ? (top - end.y) / (dy / heading) : Infinity
-  const toRight = dx > 0 ? (right - end.x) / (dx / heading) : Infinity
-  return length + Math.max(0, Math.min(toTop, toRight, 3200))
 }
 
 // Cut a run of points off after `length` pixels along it.
@@ -1633,27 +1598,19 @@ export class LaceRenderer {
     }
 
     // Ease between the taut working thread and the slack resting one. The
-    // hand keeps hold of the thread for a moment after the last stitch, then
-    // lets it go, and it falls in one smooth movement (drawThread eases it in
-    // and out).
-    if (working) this.lastWorked = now
-    if (reducedMotion) {
-      this.tension = working ? 1 : 0
-    } else if (working) {
-      // Picked back up, it lifts in one smooth sweep rather than snapping.
-      this.tension = Math.min(1, (this.tension ?? 0) + elapsed / THREAD_LIFT)
-    } else if (this.lastWorked === undefined || now - this.lastWorked > THREAD_HOLD) {
-      // Let go, it drops the way an unpicked end settles back down: quickly
-      // at first, then easing into its hang.
-      this.tension = (this.tension ?? 0) * Math.exp(-elapsed / THREAD_FALL)
-    }
+    // thread relaxes more slowly than it tightens, like letting go of yarn.
+    const tensionTarget = working && !reducedMotion ? 1 : 0
+    const settle = tensionTarget > (this.tension ?? 0) ? 90 : 300
+    this.tension = reducedMotion
+      ? tensionTarget
+      : (this.tension ?? 0) + (tensionTarget - (this.tension ?? 0)) * (1 - Math.exp(-elapsed / settle))
 
     const idleSway = reducedMotion ? 0 : Math.sin(now / 1100) * 0.18
     const liftTarget = pulling && !reducedMotion ? 1 : 0
     this.lift = reducedMotion
       ? liftTarget
       : (this.lift ?? 0) +
-        (liftTarget - (this.lift ?? 0)) * (1 - Math.exp(-elapsed / (liftTarget ? 50 : THREAD_FALL)))
+        (liftTarget - (this.lift ?? 0)) * (1 - Math.exp(-elapsed / (liftTarget ? 50 : 220)))
     drawThread(context, this.anchor, geometry, {
       stitch: stitch.index,
       progress: stitch.progress,
