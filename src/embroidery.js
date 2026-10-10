@@ -141,7 +141,7 @@ const MESH_PERIOD = 16
 // How long the working thread stays taut after the last stitch, in ms.
 const THREAD_HOLD = 1200
 // How long it then takes to fall slack, in ms.
-const THREAD_FALL = 700
+const THREAD_FALL = 1100
 // The mesh is worked at one fixed gauge: each open hole is this many CSS
 // pixels across.
 const MESH_CELL = 2.25
