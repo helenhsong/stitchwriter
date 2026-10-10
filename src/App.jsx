@@ -17,6 +17,7 @@ import {
   STITCH_FONT_STYLE,
   loadKitFace,
   caretIndexAt,
+  caretIndexNearest,
   caretPosition,
   createGeometry,
   layoutText,
@@ -469,6 +470,15 @@ function App() {
     return insideBorder ? caretIndexAt(layout, geometry, col, row) : null
   }
 
+  // The insertion point nearest a pointer position, wherever it lands.
+  const nearestIndex = (clientX, clientY) => {
+    if (!layout || placeholder) return 0
+    const scrollRows = Math.min(mainRef.current?.scrollTop ?? 0, maxScroll) / geometry.cell
+    const col = clientX / geometry.cell - geometry.textLeft
+    const row = clientY / geometry.cell - geometry.textTop + scrollRows
+    return caretIndexNearest(layout, geometry, col, row)
+  }
+
   // A right click slips the hidden input under the pointer, so the
   // browser's own menu (Cut, Copy, Paste, Select All) acts on the writing.
   // It goes back out of the way once the pointer moves on after the menu.
@@ -527,8 +537,9 @@ function App() {
     if (!input || event.button !== 0) return
     input.focus({ preventScroll: true })
     if (drag?.moved) return
-    const index = hitTest(event.clientX, event.clientY)
-    if (index === null) return
+    // A click anywhere clears any selection and puts the insertion point
+    // at the nearest place in the writing.
+    const index = hitTest(event.clientX, event.clientY) ?? nearestIndex(event.clientX, event.clientY)
     const offset = offsetOf(index)
     input.setSelectionRange(offset, offset)
     syncCaret(input)
