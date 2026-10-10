@@ -756,7 +756,7 @@ function sealCells(geometry, face) {
   }
   // Sparkles and lone stitches round the words, placed across their width
   // (1 is just past an end) and above (negative) or below.
-  const sparkles = [[-1.18, -7], [0.35, -13], [1.25, 1], [-0.45, 11]]
+  const sparkles = [[-1.18, -7], [0.35, -17], [1.25, 1], [-0.45, 11]]
   const dots = [[-0.8, -14], [1.3, -10], [0.95, -11], [-1.35, 5], [0.6, 12]]
   const reach = width / 2 + 6
   // Above the words keeps its distance from their tops, and below from
