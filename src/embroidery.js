@@ -1112,7 +1112,7 @@ function drawThread(context, origin, geometry, { stitch, progress, tension, swin
   // fall, so the strand drops and draws in together; the rest lies off
   // the canvas and is only there while it is held.
   const reach = clamp(origin.y * 1.3 + 120, hang, 3200)
-  const points = trimStrand(shape, lerp(hang, reach, ease) + (3200 - reach) * ease ** 8)
+  const points = trimStrand(shape, lerp(hang, reach, ease ** 2.5) + (3200 - reach) * ease ** 8)
 
   if (loop > 0.4) {
     context.save()
