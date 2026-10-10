@@ -141,7 +141,7 @@ const MESH_PERIOD = 16
 // How long the working thread stays taut after the last stitch, in ms.
 const THREAD_HOLD = 1200
 // How long it then takes to fall slack, in ms.
-const THREAD_FALL = 700
+const THREAD_FALL = 1100
 // The mesh is worked at one fixed gauge: each open hole is this many CSS
 // pixels across.
 const MESH_CELL = 2.25
@@ -1107,8 +1107,12 @@ function drawThread(context, origin, geometry, { stitch, progress, tension, swin
   // Where the thread leaves the lace.
   shape.unshift({ ...origin })
   // Pulled taut, the thread pays out to its full length; let go, it
-  // gathers back up into the short hanging end.
-  const points = trimStrand(shape, lerp(hang, 3200, ease ** 8))
+  // gathers back up into the short hanging end as it falls. Its visible
+  // length (roughly up to the top of the piece) shortens in step with the
+  // fall, so the strand drops and draws in together; the rest lies off
+  // the canvas and is only there while it is held.
+  const reach = clamp(origin.y * 1.3 + 120, hang, 3200)
+  const points = trimStrand(shape, lerp(hang, reach, ease) + (3200 - reach) * ease ** 8)
 
   if (loop > 0.4) {
     context.save()
